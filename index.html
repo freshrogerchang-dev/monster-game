@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07131b">
+  <title>冰水特攻隊</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="cabinet">
+    <header class="hud" aria-label="遊戲狀態">
+      <div><span class="label">分數</span><strong id="score">000000</strong></div>
+      <div class="title">冰水特攻隊</div>
+      <div><span class="label">冰爆</span><strong id="blastCount">3</strong></div>
+    </header>
+    <section class="screen-wrap">
+      <canvas id="game" width="1280" height="720" aria-label="廢棄遊樂園射擊遊戲"></canvas>
+      <div id="startPanel" class="panel">
+        <p class="eyebrow">ABANDONED FUNFAIR</p>
+        <h1>冰水特攻隊</h1>
+        <p>轉動視角找出殭屍，按住噴水讓牠結冰，再把冰塊擊碎！</p>
+        <button id="startButton">開始遊戲</button>
+      </div>
+      <div id="message" class="message" aria-live="polite"></div>
+    </section>
+    <section class="controls" aria-label="遊戲控制器">
+      <button id="leftButton" class="turn" aria-label="向左轉">◀<small>向左找</small></button>
+      <button id="sprayButton" class="spray" aria-label="按住噴水">💧<small>按住噴水</small></button>
+      <button id="blastButton" class="blast" aria-label="施放冰爆">❄<small>冰爆</small></button>
+      <button id="rightButton" class="turn" aria-label="向右轉">▶<small>向右找</small></button>
+    </section>
+    <p class="keyboard">鍵盤：← → 轉向　Space 噴水　E 冰爆</p>
+  </main>
+  <script type="module" src="src/game.js"></script>
+</body>
+</html>
