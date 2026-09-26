@@ -1,95 +1,70 @@
-import { applyWater, chainFreeze, clamp } from './mechanics.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import { advanceEnemy, applyWater, clamp, resolveContact } from './mechanics.js';
 
 const canvas = document.querySelector('#game');
-const ctx = canvas.getContext('2d');
-const ui = {
-  score: document.querySelector('#score'), blast: document.querySelector('#blastCount'),
-  panel: document.querySelector('#startPanel'), start: document.querySelector('#startButton'),
-  message: document.querySelector('#message'), left: document.querySelector('#leftButton'),
-  right: document.querySelector('#rightButton'), spray: document.querySelector('#sprayButton'),
-  blastButton: document.querySelector('#blastButton')
-};
+const ui = { panel: document.querySelector('#startPanel'), start: document.querySelector('#startButton'), healthBar: document.querySelector('#healthBar'), healthText: document.querySelector('#healthText'), score: document.querySelector('#score'), message: document.querySelector('#message'), flash: document.querySelector('#hitFlash'), meter: document.querySelector('#freezeMeter'), meterFill: document.querySelector('#freezeMeter i'), crosshair: document.querySelector('.crosshair') };
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x07131b); scene.fog = new THREE.FogExp2(0x07131b, 0.032);
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .05, 120); camera.position.set(0, 1.7, 4.8); camera.rotation.order = 'YXZ'; scene.add(camera);
+scene.add(new THREE.HemisphereLight(0x84cce8, 0x172018, 1.8));
+const moon = new THREE.DirectionalLight(0xb9eaff, 3.4); moon.position.set(-8, 16, 2); moon.castShadow = true; scene.add(moon);
+const redGlow = new THREE.PointLight(0xff4a2d, 15, 20); redGlow.position.set(10, 4, -18); scene.add(redGlow);
+const cyanGlow = new THREE.PointLight(0x2de8ff, 14, 18); cyanGlow.position.set(-9, 3, -8); scene.add(cyanGlow);
+const state = { running: false, spraying: false, health: 100, score: 0, wave: 0, enemies: [], particles: [], spawnTimer: 0, yaw: 0, pitch: 0, baseAlpha: null, dragX: 0, dragY: 0, dragging: false };
+const raycaster = new THREE.Raycaster(), center = new THREE.Vector2(0, 0), clock = new THREE.Clock();
 
-const TYPES = {
-  normal: { color: '#9bbf75', size: 62, freezeRate: 45, speed: 10, points: 100 },
-  fast: { color: '#e1ad62', size: 48, freezeRate: 54, speed: 22, points: 160 },
-  tank: { color: '#7e9a70', size: 82, freezeRate: 26, speed: 6, points: 250 },
-  shield: { color: '#b08b70', size: 66, freezeRate: 34, speed: 8, points: 220 }
-};
-const state = { running: false, view: 0, score: 0, blasts: 3, spraying: false, left: false, right: false, enemies: [], particles: [], last: 0, wave: 0, waveDelay: 0, shake: 0 };
-
-function spawnWave() {
-  state.wave += 1;
-  const count = Math.min(3 + state.wave, 9);
-  const names = Object.keys(TYPES);
-  state.enemies = Array.from({ length: count }, (_, i) => {
-    const type = state.wave < 2 ? 'normal' : names[Math.floor(Math.random() * names.length)];
-    return { ...TYPES[type], type, worldX: state.view + (i - (count - 1) / 2) * 170 + (Math.random() - .5) * 80, y: 430 + Math.random() * 105, freeze: 0, alive: true, bob: Math.random() * 10 };
-  });
-  announce(`第 ${state.wave} 波`);
+function addEnvironment() {
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 120), new THREE.MeshStandardMaterial({ color: 0x17201d, roughness: .94 })); ground.rotation.x = -Math.PI / 2; ground.position.z = -30; ground.receiveShadow = true; scene.add(ground);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(13, 100), new THREE.MeshStandardMaterial({ color: 0x20272a, roughness: 1 })); road.rotation.x = -Math.PI / 2; road.position.set(0, .012, -28); road.receiveShadow = true; scene.add(road);
+  for (let z = 0; z > -75; z -= 8) { const stripe = new THREE.Mesh(new THREE.PlaneGeometry(.28, 3.4), new THREE.MeshBasicMaterial({ color: 0x8b8e73 })); stripe.rotation.x = -Math.PI / 2; stripe.position.set(0, .025, z); scene.add(stripe); }
+  for (let side of [-1, 1]) for (let i = 0; i < 7; i++) { const height = 4 + Math.random() * 2; const booth = new THREE.Mesh(new THREE.BoxGeometry(5.5, height, 5), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x3d2529 : 0x243c42, roughness: .85 })); booth.position.set(side * (9 + Math.random() * 5), height / 2, -5 - i * 11); booth.castShadow = true; scene.add(booth); const roof = new THREE.Mesh(new THREE.ConeGeometry(4.3, 2.2, 4), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x27434a : 0x51343e, roughness: .8 })); roof.rotation.y = Math.PI / 4; roof.position.set(booth.position.x, height + 1.1, booth.position.z); scene.add(roof); }
+  const wheel = new THREE.Group(); wheel.position.set(-18, 10, -42); const ringMat = new THREE.MeshStandardMaterial({ color: 0x74436f, emissive: 0x210d22 }); wheel.add(new THREE.Mesh(new THREE.TorusGeometry(8, .28, 8, 32), ringMat)); for (let i = 0; i < 10; i++) { const spoke = new THREE.Mesh(new THREE.BoxGeometry(.12, 15.5, .12), ringMat); spoke.rotation.z = i * Math.PI / 10; wheel.add(spoke); } scene.add(wheel);
+  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(3.8, 20, 14), new THREE.MeshBasicMaterial({ color: 0xe7e0af })); moonMesh.position.set(17, 20, -52); scene.add(moonMesh);
 }
 
-function startGame() {
-  Object.assign(state, { running: true, view: 0, score: 0, blasts: 3, enemies: [], particles: [], wave: 0, waveDelay: 0 });
-  ui.panel.classList.add('hidden');
-  spawnWave(); updateHud(); state.last = performance.now(); requestAnimationFrame(loop);
+function createBlaster() {
+  const gun = new THREE.Group(), blue = new THREE.MeshStandardMaterial({ color: 0x21bfd5, roughness: .35, metalness: .15 }), yellow = new THREE.MeshStandardMaterial({ color: 0xffd849, roughness: .45 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(.16, .24, 1.15, 16), blue); body.rotation.x = Math.PI / 2; body.position.z = -.4; gun.add(body);
+  const tank = new THREE.Mesh(new THREE.SphereGeometry(.3, 16, 12), new THREE.MeshPhysicalMaterial({ color: 0x5feeff, transparent: true, opacity: .66, transmission: .25 })); tank.scale.set(1, 1.25, 1); tank.position.set(0, .08, .02); gun.add(tank);
+  const flower = new THREE.Group(); flower.position.z = -.98; for (let i = 0; i < 8; i++) { const petal = new THREE.Mesh(new THREE.SphereGeometry(.11, 10, 8), yellow); const a = i * Math.PI / 4; petal.position.set(Math.cos(a) * .17, Math.sin(a) * .17, 0); petal.scale.set(1.25, .7, .45); flower.add(petal); } const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(.1, .12, .12, 14), blue); nozzle.rotation.x = Math.PI / 2; flower.add(nozzle); gun.add(flower);
+  gun.position.set(.42, -.5, -1.05); gun.rotation.set(-.06, -.06, 0); camera.add(gun); return { gun, flower };
 }
 
-function announce(text) { ui.message.textContent = text; ui.message.classList.add('show'); clearTimeout(announce.timer); announce.timer = setTimeout(() => ui.message.classList.remove('show'), 850); }
-function updateHud() { ui.score.textContent = String(state.score).padStart(6, '0'); ui.blast.textContent = state.blasts; }
-function screenX(enemy) { return canvas.width / 2 + (enemy.worldX - state.view); }
-function targetEnemy() {
-  return state.enemies.filter(e => e.alive).map(e => ({ e, d: Math.hypot(screenX(e) - canvas.width / 2, e.y - canvas.height / 2) })).filter(v => v.d < v.e.size * .75).sort((a, b) => a.d - b.d)[0]?.e;
+function zombieMaterial(color) { return new THREE.MeshStandardMaterial({ color, roughness: .82, emissive: 0x000000 }); }
+function createZombie(type = 'normal') {
+  const config = type === 'fast' ? { scale: .82, speed: 2.2, damage: 14, rate: 57, color: 0xb89152 } : type === 'tank' ? { scale: 1.35, speed: .72, damage: 28, rate: 25, color: 0x5f8057 } : { scale: 1, speed: 1.15, damage: 20, rate: 40, color: 0x789c68 };
+  const group = new THREE.Group(); group.userData.enemyRoot = group; const skin = zombieMaterial(config.color), cloth = zombieMaterial(type === 'fast' ? 0x7b3433 : 0x334552);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.75, 1.05, .42), cloth); body.position.y = 1.35; body.castShadow = true; group.add(body); const head = new THREE.Mesh(new THREE.SphereGeometry(.38, 10, 8), skin); head.position.y = 2.12; head.scale.y = 1.12; head.castShadow = true; group.add(head);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3a28 }); for (let x of [-.14, .14]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(.04, 7, 5), eyeMat); eye.position.set(x, 2.17, .35); group.add(eye); }
+  const limbs = []; for (let x of [-.52, .52]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(.22, .95, .22), skin); arm.position.set(x, 1.38, .16); arm.rotation.x = -1.05; arm.castShadow = true; group.add(arm); limbs.push(arm); } for (let x of [-.23, .23]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(.27, .85, .3), cloth); leg.position.set(x, .45, 0); leg.castShadow = true; group.add(leg); limbs.push(leg); }
+  const distance = 18 + Math.random() * 18, angle = (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, 0, camera.position.z - Math.cos(angle) * distance); group.scale.setScalar(config.scale);
+  Object.assign(group.userData, { type, alive: true, freeze: 0, freezeRate: config.rate, speed: config.speed, damage: config.damage, distance, parts: [skin, cloth], limbs, phase: Math.random() * 6, points: type === 'tank' ? 300 : type === 'fast' ? 170 : 100 }); scene.add(group); state.enemies.push(group); return group;
 }
 
-function update(dt) {
-  const turn = (state.right ? 1 : 0) - (state.left ? 1 : 0);
-  state.view += turn * 330 * dt;
-  for (const enemy of state.enemies) { if (enemy.alive && enemy.freeze < 100) enemy.y += enemy.speed * dt * (1 - enemy.freeze / 130); enemy.bob += dt * 4; }
-  if (state.spraying) {
-    const enemy = targetEnemy();
-    if (enemy) {
-      const result = applyWater(enemy, dt);
-      if (Math.random() < .55) state.particles.push({ x: canvas.width / 2 + (Math.random() - .5) * 20, y: canvas.height / 2 + (Math.random() - .5) * 20, tx: screenX(enemy), ty: enemy.y, life: 1 });
-      if (result.justFrozen) announce('完全冰凍！');
-      if (result.shattered) { const chained = chainFreeze(state.enemies, enemy); state.score += enemy.points + chained * 40; state.shake = 9; burst(screenX(enemy), enemy.y); announce(chained ? `冰裂連鎖 ×${chained + 1}` : '冰塊擊破！'); updateHud(); }
-    }
-  }
-  state.particles.forEach(p => p.life -= dt * 3); state.particles = state.particles.filter(p => p.life > 0);
-  state.shake *= .82;
-  if (state.enemies.length && state.enemies.every(e => !e.alive)) { state.waveDelay += dt; if (state.waveDelay > 1.2) { state.waveDelay = 0; spawnWave(); } }
+addEnvironment(); const blaster = createBlaster();
+function spawnWave() { state.wave += 1; const count = Math.min(2 + state.wave, 8); for (let i = 0; i < count; i++) createZombie(state.wave > 2 && i % 4 === 0 ? 'tank' : state.wave > 1 && i % 3 === 0 ? 'fast' : 'normal'); announce(`第 ${state.wave} 波來了`); }
+function updateEnemy(enemy, dt, elapsed) {
+  const data = enemy.userData; if (!data.alive) return; const toPlayer = new THREE.Vector3(camera.position.x - enemy.position.x, 0, camera.position.z - enemy.position.z); data.distance = toPlayer.length(); advanceEnemy(data, dt); if (data.freeze < 100) enemy.position.addScaledVector(toPlayer.normalize(), data.speed * (1 - clamp(data.freeze / 125, 0, .8)) * dt); enemy.lookAt(camera.position.x, enemy.position.y, camera.position.z);
+  const walk = Math.sin(elapsed * 7 * data.speed + data.phase) * .42 * (1 - data.freeze / 100); data.limbs[0].rotation.x = -1 + walk; data.limbs[1].rotation.x = -1 - walk; data.limbs[2].rotation.x = walk; data.limbs[3].rotation.x = -walk;
+  const ice = clamp(data.freeze / 100, 0, 1), base = new THREE.Color(data.type === 'fast' ? 0xb89152 : data.type === 'tank' ? 0x5f8057 : 0x789c68); for (const mat of data.parts) { mat.color.lerpColors(base, new THREE.Color(0x83eaff), ice); mat.emissive.setRGB(0, ice * .12, ice * .17); }
+  const contact = resolveContact(state.health, data, 1.35); if (contact.hit) { state.health = contact.health; scene.remove(enemy); hitPlayer(); updateHud(); if (state.health <= 0) gameOver(); }
 }
-
-function burst(x, y) { for (let i = 0; i < 28; i++) state.particles.push({ x, y, vx: (Math.random() - .5) * 360, vy: (Math.random() - .5) * 360, life: 1, shard: true }); }
-
-function drawBackground() {
-  const g = ctx.createLinearGradient(0, 0, 0, canvas.height); g.addColorStop(0, '#162a3a'); g.addColorStop(.58, '#384541'); g.addColorStop(1, '#13181a'); ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#d9d0a0'; ctx.beginPath(); ctx.arc(1000 - state.view * .05, 110, 55, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#0d171c';
-  for (let i = -2; i < 9; i++) { const x = i * 230 - (state.view * .18 % 230); ctx.fillRect(x, 245, 170, 260); ctx.beginPath(); ctx.moveTo(x - 18, 245); ctx.lineTo(x + 85, 170); ctx.lineTo(x + 188, 245); ctx.fill(); }
-  ctx.strokeStyle = '#533857'; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(250 - state.view * .38, 320, 170, Math.PI, 0); ctx.stroke();
-  for (let i = 0; i < 8; i++) { const a = Math.PI + i * Math.PI / 7, cx = 250 - state.view * .38; ctx.strokeStyle = '#533857'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, 320); ctx.lineTo(cx + Math.cos(a) * 170, 320 + Math.sin(a) * 170); ctx.stroke(); }
-  ctx.fillStyle = '#121719'; ctx.fillRect(0, 520, canvas.width, 200);
-}
-
-function drawEnemy(e) {
-  const x = screenX(e), y = e.y + Math.sin(e.bob) * 4; if (x < -130 || x > canvas.width + 130 || !e.alive) return;
-  ctx.save(); ctx.translate(x, y); const ice = e.freeze / 100; ctx.globalAlpha = .35; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(0, e.size * .82, e.size * .72, 16, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-  ctx.fillStyle = e.color; ctx.fillRect(-e.size * .44, -e.size * .15, e.size * .88, e.size); ctx.beginPath(); ctx.arc(0, -e.size * .28, e.size * .46, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#1b2020'; ctx.beginPath(); ctx.arc(-e.size * .17, -e.size * .34, 6, 0, 7); ctx.arc(e.size * .17, -e.size * .34, 6, 0, 7); ctx.fill();
-  if (e.type === 'shield') { ctx.fillStyle = '#596c74'; ctx.fillRect(-e.size * .7, 0, e.size * 1.4, e.size * .72); ctx.strokeStyle = '#a8c3cd'; ctx.lineWidth = 5; ctx.strokeRect(-e.size * .7, 0, e.size * 1.4, e.size * .72); }
-  if (ice > 0) { ctx.globalAlpha = clamp(ice, 0, .84); ctx.fillStyle = '#75eaff'; ctx.beginPath(); ctx.arc(0, e.size * .12, e.size * .76, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = '#d7fbff'; ctx.lineWidth = 4; for (let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(-e.size*.5+i*e.size*.25,-e.size*.5);ctx.lineTo(-e.size*.25+i*e.size*.18,e.size*.75);ctx.stroke();} }
-  ctx.fillStyle = '#071014cc'; ctx.fillRect(-48, -e.size - 28, 96, 12); ctx.fillStyle = e.freeze >= 100 ? '#c7faff' : '#49dceb'; ctx.fillRect(-48, -e.size - 28, 96 * clamp(e.freeze / 100, 0, 1), 12); ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`${Math.floor(clamp(e.freeze,0,100))}%`, 0, -e.size - 34); ctx.restore();
-}
-
-function drawAim() { const x=canvas.width/2,y=canvas.height/2; ctx.strokeStyle=state.spraying?'#baf8ff':'#ffdc66';ctx.lineWidth=4;ctx.beginPath();ctx.arc(x,y,28,0,7);ctx.moveTo(x-45,y);ctx.lineTo(x-16,y);ctx.moveTo(x+16,y);ctx.lineTo(x+45,y);ctx.moveTo(x,y-45);ctx.lineTo(x,y-16);ctx.moveTo(x,y+16);ctx.lineTo(x,y+45);ctx.stroke(); }
-function drawParticles() { for (const p of state.particles) { if (p.shard) { p.x += p.vx/60; p.y += p.vy/60; p.vy += 7; } else { p.x += (p.tx-p.x)*.28; p.y += (p.ty-p.y)*.28; } ctx.globalAlpha=p.life;ctx.fillStyle=p.shard?'#bff9ff':'#5feaff';ctx.fillRect(p.x,p.y,p.shard?12:7,p.shard?12:7); } ctx.globalAlpha=1; }
-function draw() { ctx.save(); ctx.translate((Math.random()-.5)*state.shake,(Math.random()-.5)*state.shake); drawBackground(); state.enemies.forEach(drawEnemy); drawParticles(); drawAim(); ctx.restore(); }
-function loop(now) { if (!state.running) return; const dt=Math.min((now-state.last)/1000,.05);state.last=now;update(dt);draw();requestAnimationFrame(loop); }
-
-function bindHold(element, key) { const on=e=>{e.preventDefault();state[key]=true;element.classList.add('active')},off=e=>{e.preventDefault();state[key]=false;element.classList.remove('active')}; element.addEventListener('pointerdown',on);window.addEventListener('pointerup',off);element.addEventListener('pointercancel',off); }
-function iceBlast() { if (!state.running || state.blasts<=0) return; state.blasts--; let hits=0; for(const e of state.enemies){if(e.alive && Math.abs(screenX(e)-canvas.width/2)<420){e.freeze=clamp(e.freeze+70,0,100);hits++;}} state.shake=14;announce(`全畫面冰爆！${hits ? ` ×${hits}`:''}`);updateHud(); }
-bindHold(ui.left,'left');bindHold(ui.right,'right');bindHold(ui.spray,'spraying');ui.blastButton.addEventListener('click',iceBlast);ui.start.addEventListener('click',startGame);
-window.addEventListener('keydown',e=>{if(e.code==='ArrowLeft')state.left=true;if(e.code==='ArrowRight')state.right=true;if(e.code==='Space'){e.preventDefault();state.spraying=true}if(e.code==='KeyE')iceBlast()});
-window.addEventListener('keyup',e=>{if(e.code==='ArrowLeft')state.left=false;if(e.code==='ArrowRight')state.right=false;if(e.code==='Space')state.spraying=false});
-drawBackground(); drawAim();
+function findEnemyRoot(object) { let current = object; while (current && !current.userData.enemyRoot) current = current.parent; return current?.userData.enemyRoot || null; }
+function targetEnemy() { raycaster.setFromCamera(center, camera); const hits = raycaster.intersectObjects(state.enemies.filter(e => e.userData.alive), true); return hits[0] ? findEnemyRoot(hits[0].object) : null; }
+function sprayAt(enemy, dt) { blaster.gun.position.y = -.5 + Math.sin(performance.now() * .035) * .012; blaster.flower.rotation.z += dt * 13; makeWaterParticle(); if (!enemy) { ui.crosshair.classList.remove('locked'); ui.meter.classList.remove('visible'); return; } ui.crosshair.classList.add('locked'); ui.meter.classList.add('visible'); const result = applyWater(enemy.userData, dt); ui.meterFill.style.width = `${Math.min(enemy.userData.freeze, 100)}%`; if (result.justFrozen) announce('完全冰凍！繼續噴！'); if (result.shattered) shatter(enemy); }
+function makeWaterParticle() { if (state.particles.length > 85) return; const drop = new THREE.Mesh(new THREE.SphereGeometry(.035 + Math.random() * .04, 5, 4), new THREE.MeshBasicMaterial({ color: 0x60eaff, transparent: true, opacity: .82 })); const origin = new THREE.Vector3(.42, -.5, -1.95).applyMatrix4(camera.matrixWorld), direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); drop.position.copy(origin); drop.userData.velocity = direction.multiplyScalar(18 + Math.random() * 6); drop.userData.life = .55; scene.add(drop); state.particles.push(drop); }
+function shatter(enemy) { enemy.userData.alive = false; state.score += enemy.userData.points; updateHud(); announce('冰塊擊破！'); for (let i = 0; i < 22; i++) { const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(.09 + Math.random() * .15), new THREE.MeshBasicMaterial({ color: 0x9af3ff, transparent: true })); shard.position.copy(enemy.position).add(new THREE.Vector3((Math.random()-.5), .5+Math.random()*2, (Math.random()-.5))); shard.userData.velocity = new THREE.Vector3((Math.random()-.5)*5, Math.random()*5, (Math.random()-.5)*5); shard.userData.life = 1.2; scene.add(shard); state.particles.push(shard); } scene.remove(enemy); ui.meter.classList.remove('visible'); ui.crosshair.classList.remove('locked'); }
+function updateParticles(dt) { state.particles = state.particles.filter(p => { p.userData.life -= dt; if (p.userData.life <= 0) { scene.remove(p); p.geometry.dispose(); p.material.dispose(); return false; } p.position.addScaledVector(p.userData.velocity, dt); if (p.geometry.type === 'TetrahedronGeometry') p.userData.velocity.y -= 6 * dt; p.material.opacity = clamp(p.userData.life, 0, .8); return true; }); }
+function updateHud() { ui.healthBar.style.width = `${state.health}%`; ui.healthText.textContent = Math.ceil(state.health); ui.score.textContent = state.score; ui.healthBar.style.background = state.health < 35 ? '#ff4d4d' : 'linear-gradient(90deg, #37e0c1, #b6f25a)'; }
+function hitPlayer() { ui.flash.classList.add('show'); announce('被殭屍碰到了！'); setTimeout(() => ui.flash.classList.remove('show'), 180); }
+function announce(text) { ui.message.textContent = text; ui.message.classList.add('show'); clearTimeout(announce.timer); announce.timer = setTimeout(() => ui.message.classList.remove('show'), 950); }
+function gameOver() { state.running = false; state.spraying = false; ui.panel.classList.remove('hidden'); ui.panel.querySelector('h1').textContent = '守不住了！'; ui.panel.querySelector('p').textContent = `你得到 ${state.score} 分，再試一次！`; ui.start.textContent = '重新出發'; }
+function handleOrientation(event) { if (!state.running || event.alpha == null) return; if (state.baseAlpha == null) state.baseAlpha = event.alpha; let delta = event.alpha - state.baseAlpha; if (delta > 180) delta -= 360; if (delta < -180) delta += 360; state.yaw = THREE.MathUtils.degToRad(-delta); state.pitch = clamp(THREE.MathUtils.degToRad((event.beta ?? 90) - 90), -.62, .5); }
+async function startGame() { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') announce('未允許感測器，可用手指拖曳視角'); } catch { announce('可用手指拖曳視角'); } } state.enemies.forEach(e => scene.remove(e)); state.enemies = []; Object.assign(state, { running: true, spraying: false, health: 100, score: 0, wave: 0, spawnTimer: 0, baseAlpha: null, yaw: 0, pitch: 0 }); camera.rotation.set(0, 0, 0); ui.panel.classList.add('hidden'); updateHud(); spawnWave(); clock.start(); }
+function loop() { requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), .05), elapsed = clock.elapsedTime; if (state.running) { camera.rotation.y += (state.yaw - camera.rotation.y) * Math.min(1, dt * 9); camera.rotation.x += (state.pitch - camera.rotation.x) * Math.min(1, dt * 9); const enemy = targetEnemy(); if (state.spraying) sprayAt(enemy, dt); else { ui.crosshair.classList.toggle('locked', !!enemy); ui.meter.classList.remove('visible'); } state.enemies.forEach(e => updateEnemy(e, dt, elapsed)); updateParticles(dt); if (state.enemies.every(e => !e.userData.alive)) { state.spawnTimer += dt; if (state.spawnTimer > 1.5) { state.spawnTimer = 0; spawnWave(); } } } renderer.render(scene, camera); }
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', resize); resize(); window.addEventListener('deviceorientation', handleOrientation, true); ui.start.addEventListener('click', startGame);
+canvas.addEventListener('pointerdown', e => { if (!state.running) return; state.spraying = true; state.dragging = true; state.dragX = e.clientX; state.dragY = e.clientY; canvas.setPointerCapture?.(e.pointerId); });
+canvas.addEventListener('pointermove', e => { if (!state.dragging || e.pointerType !== 'mouse') return; state.yaw -= (e.clientX - state.dragX) * .004; state.pitch = clamp(state.pitch - (e.clientY - state.dragY) * .003, -.62, .5); state.dragX = e.clientX; state.dragY = e.clientY; });
+window.addEventListener('pointerup', () => { state.spraying = false; state.dragging = false; }); window.addEventListener('pointercancel', () => { state.spraying = false; state.dragging = false; }); addEventListener('contextmenu', e => e.preventDefault()); loop();

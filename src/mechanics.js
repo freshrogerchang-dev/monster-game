@@ -10,15 +10,15 @@ export function applyWater(enemy, seconds) {
   return { shattered, justFrozen };
 }
 
-export function chainFreeze(enemies, source, radius = 210) {
-  let chained = 0;
-  for (const enemy of enemies) {
-    if (!enemy.alive || enemy === source) continue;
-    const distance = Math.hypot(enemy.worldX - source.worldX, enemy.y - source.y);
-    if (distance <= radius) {
-      enemy.freeze = clamp(enemy.freeze + 34, 0, 100);
-      chained += 1;
-    }
-  }
-  return chained;
+export function advanceEnemy(enemy, seconds) {
+  if (!enemy.alive || enemy.freeze >= 100) return enemy.distance;
+  const slow = 1 - clamp(enemy.freeze / 125, 0, .8);
+  enemy.distance = Math.max(0, enemy.distance - enemy.speed * slow * seconds);
+  return enemy.distance;
+}
+
+export function resolveContact(playerHealth, enemy, contactDistance = 1.35) {
+  if (!enemy.alive || enemy.distance > contactDistance) return { health: playerHealth, hit: false };
+  enemy.alive = false;
+  return { health: clamp(playerHealth - enemy.damage, 0, 100), hit: true };
 }

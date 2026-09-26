@@ -25,3 +25,10 @@
 
 - 使用 `gh-pages` 分支部署靜態遊戲，避免依賴 GitHub Actions workflow 權限。
 - 公開網址：`https://freshrogerchang-dev.github.io/monster-game/`
+
+## 2026-09-26 垂直切片 2：3D 手機體感版
+
+- 重建為 Three.js/WebGL 第一人稱 3D 場景，加入立體遊樂園、低多邊形殭屍與第一人稱花朵水槍。
+- 移除左右按鈕，以 Device Orientation 控制鏡頭；桌機只保留滑鼠拖曳備援。
+- 殭屍會朝玩家前進，接觸後扣血；生命歸零可重新開始。
+- 按住畫面射擊，累積冰凍值後擊碎敵人。
