@@ -31,8 +31,11 @@ export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4)
   return current + clamp(step, -limit, limit);
 }
 
-export const MIN_AIM_PITCH = -.14; // 往下最多約 8 度
-export const MAX_AIM_PITCH = .1; // 往上最多約 6 度
+export const MIN_AIM_PITCH = -.22; // 往下最多約 13 度
+export const MAX_AIM_PITCH = .2; // 往上最多約 11 度
+
+// 兩個角度的差，換算到 -π～π 之間
+export function relativeAngle(value, base) { let d = value - base; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
 
 export const POWER_UP_TYPES = ['water', 'bomb', 'heal', 'slow'];
 export const POWER_UP_SECONDS = 8;
