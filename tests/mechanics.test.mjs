@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { advanceEnemy, applyWater, clamp, MAX_AIM_YAW, resolveContact, stepAim, applyPowerUp, tickBoosts } from '../src/mechanics.js';
+import { advanceEnemy, applyWater, clamp, MAX_AIM_YAW, resolveContact, stepAim, applyPowerUp, tickBoosts, relativeAngle } from '../src/mechanics.js';
 
 assert.equal(clamp(140, 0, 100), 100);
 const target = { alive: true, freeze: 0, freezeRate: 50 };
@@ -25,4 +25,6 @@ tickBoosts(game.boosts, 10); assert.equal(game.boosts.water, 0, 'boosts never go
 const frozenA = { alive: true, freeze: 20 }, frozenB = { alive: true, freeze: 90 }, gone = { alive: false, freeze: 0 };
 applyPowerUp(game, 'bomb', [frozenA, frozenB, gone]);
 assert.equal(frozenA.freeze, 120); assert.equal(frozenB.freeze, 134, 'bomb freezes but does not shatter'); assert.equal(gone.freeze, 0);
+assert.ok(Math.abs(relativeAngle(Math.PI - .1, -Math.PI + .1) - -.2) < 1e-9, 'angles wrap across ±π');
+assert.equal(relativeAngle(.5, .2).toFixed(3), '0.300');
 console.log('3D mechanics tests passed');
