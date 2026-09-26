@@ -31,8 +31,8 @@ export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4)
   return current + clamp(step, -limit, limit);
 }
 
-export const MIN_AIM_PITCH = -.3; // 往下最多約 17 度
-export const MAX_AIM_PITCH = .25; // 往上最多約 14 度
+export const MIN_AIM_PITCH = -.14; // 往下最多約 8 度
+export const MAX_AIM_PITCH = .1; // 往上最多約 6 度
 
 export const POWER_UP_TYPES = ['water', 'bomb', 'heal', 'slow'];
 export const POWER_UP_SECONDS = 8;
