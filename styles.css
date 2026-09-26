@@ -1,6 +1,7 @@
 :root { color-scheme: dark; font-family: "Arial Rounded MT Bold", "Noto Sans TC", system-ui, sans-serif; }
-* { box-sizing: border-box; }
-html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #03080b; touch-action: none; }
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #03080b; touch-action: none; -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+button { touch-action: manipulation; }
 button { font: inherit; }
 #gameShell { position: fixed; inset: 0; overflow: hidden; background: #07131b; user-select: none; }
 #game { width: 100%; height: 100%; display: block; }
@@ -37,3 +38,20 @@ button { font: inherit; }
 .panel button:active { transform: translateY(4px); box-shadow: 0 2px #a75d1c; }
 .panel small { color: #9bb9c0; }
 @media (orientation: landscape) and (max-height: 520px) { .panel h1 { font-size: 3.4rem; } .panel p { margin: 12px 0; } }
+
+.level-info { position: absolute; z-index: 4; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: #071016aa; color: #e8fdff; font-size: clamp(.75rem, 3vw, .95rem); white-space: nowrap; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.level-info.visible { opacity: 1; }
+.effect { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .3s; }
+.shield-fx { box-shadow: inset 0 0 60px 18px #5fdcffaa; border-radius: 28px; }
+.stop-fx { background: radial-gradient(circle, transparent 45%, #a0ffb033 100%); }
+.shielded .shield-fx, .time-stopped .stop-fx { opacity: 1; }
+.level-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: min(460px, 92vw); margin: 6px 0 12px; }
+.panel .level-button { min-width: 0; margin: 0; font-size: 1rem; box-shadow: none; }
+.panel .level-button:active { transform: scale(.96); box-shadow: none; }
+.panel .level-button { display: grid; gap: 2px; justify-items: center; padding: 10px 4px; border: 2px solid #62efff88; border-radius: 16px; background: #0b2a36cc; color: #e8fdff; cursor: pointer; }
+.level-button b { font-size: 1.3rem; color: #ffe373; }
+.level-button span { font-size: .85rem; }
+.panel .level-button.current { border-color: #ffe373; box-shadow: 0 0 14px #ffe37355; }
+.panel .level-button:disabled { opacity: .45; cursor: default; }
+@media (orientation: landscape) and (max-height: 520px) { .level-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin: 2px 0 6px; } .panel .level-button { padding: 6px 2px; } .panel .eyebrow, .panel small { display: none; } }
+@media (max-width: 640px) { .level-info { top: calc(max(14px, env(safe-area-inset-top)) + 58px); } }

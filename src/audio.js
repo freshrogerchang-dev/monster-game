@@ -48,6 +48,9 @@ export const sfx = {
   itemSpawn() { tone({ freq: 1175, type: 'sine', dur: .5, vol: .14 }); tone({ freq: 1568, type: 'sine', start: .12, dur: .6, vol: .12 }); },
   wave() { tone({ freq: 392, type: 'square', dur: .14, vol: .09 }); tone({ freq: 523, type: 'square', start: .15, dur: .14, vol: .09 }); tone({ freq: 659, type: 'square', start: .3, dur: .3, vol: .1 }); },
   gameOver() { [523, 440, 349, 262].forEach((f, i) => tone({ freq: f, type: 'triangle', start: i * .22, dur: .4, vol: .16 })); },
+  shield() { tone({ freq: 500, to: 1400, type: 'sine', dur: .25, vol: .18 }); noise({ start: .05, dur: .2, vol: .15, filter: 'highpass', freq: 3000 }); tone({ freq: 1800, type: 'triangle', start: .12, dur: .3, vol: .08 }); },
+  levelClear() { [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'square', start: i * .12, dur: .22, vol: .1 })); [1047, 1319, 1568].forEach(f => tone({ freq: f, type: 'triangle', start: .55, dur: .9, vol: .09 })); },
+  boss() { tone({ freq: 110, to: 55, type: 'sawtooth', dur: 1.1, vol: .25 }); tone({ freq: 165, to: 80, type: 'square', start: .05, dur: 1, vol: .08 }); noise({ dur: .9, vol: .15, filter: 'lowpass', freq: 500, to: 150 }); },
   start() { tone({ freq: 300, to: 1200, type: 'sine', dur: .3, vol: .15 }); noise({ start: .05, dur: .3, vol: .12, freq: 1500 }); },
   // 殭屍可愛的「嗚～」聲，距離越遠越小聲
   groan(distance = 10) {
