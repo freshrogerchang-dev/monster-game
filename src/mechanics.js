@@ -22,3 +22,30 @@ export function resolveContact(playerHealth, enemy, contactDistance = 1.35) {
   enemy.alive = false;
   return { health: clamp(playerHealth - enemy.damage, 0, 100), hit: true };
 }
+
+export const MAX_AIM_YAW = 75 * Math.PI / 180; // 左右各 75 度，總共 150 度
+
+export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4) {
+  const step = (target - current) * Math.min(1, seconds * smoothing);
+  const limit = maxSpeed * seconds;
+  return current + clamp(step, -limit, limit);
+}
+
+export const MIN_AIM_PITCH = -.14; // 往下最多約 8 度
+export const MAX_AIM_PITCH = .1; // 往上最多約 6 度
+
+export const POWER_UP_TYPES = ['water', 'bomb', 'heal', 'slow'];
+export const POWER_UP_SECONDS = 8;
+
+export function applyPowerUp(game, type, enemies = []) {
+  if (type === 'heal') game.health = clamp(game.health + 30, 0, 100);
+  if (type === 'water') game.boosts.water = POWER_UP_SECONDS;
+  if (type === 'slow') game.boosts.slow = POWER_UP_SECONDS;
+  if (type === 'bomb') for (const enemy of enemies) if (enemy.alive) enemy.freeze = clamp(enemy.freeze + 100, 0, 134);
+  return game;
+}
+
+export function tickBoosts(boosts, seconds) {
+  for (const key of Object.keys(boosts)) boosts[key] = Math.max(0, boosts[key] - seconds);
+  return boosts;
+}
