@@ -22,3 +22,11 @@ export function resolveContact(playerHealth, enemy, contactDistance = 1.35) {
   enemy.alive = false;
   return { health: clamp(playerHealth - enemy.damage, 0, 100), hit: true };
 }
+
+export const MAX_AIM_YAW = 75 * Math.PI / 180; // 左右各 75 度，總共 150 度
+
+export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4) {
+  const step = (target - current) * Math.min(1, seconds * smoothing);
+  const limit = maxSpeed * seconds;
+  return current + clamp(step, -limit, limit);
+}
