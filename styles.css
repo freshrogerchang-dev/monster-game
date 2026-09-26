@@ -21,6 +21,8 @@ button { font: inherit; }
 .freeze-meter { position: absolute; z-index: 3; left: 50%; top: calc(50% + 42px); width: 100px; height: 7px; overflow: hidden; transform: translateX(-50%); border-radius: 99px; background: #061016aa; opacity: 0; pointer-events: none; }
 .freeze-meter.visible { opacity: 1; }
 .freeze-meter i { display: block; width: 0; height: 100%; background: #75edff; box-shadow: 0 0 10px #5dedff; }
+.power-up { position: absolute; z-index: 4; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: #071016cc; border: 2px solid #62efff; color: #e8fdff; font-size: 1rem; white-space: nowrap; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.power-up.visible { opacity: 1; }
 .hit-flash { position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle, transparent 30%, #ff1d1d99 100%); transition: opacity .25s; }
 .hit-flash.show { opacity: 1; transition: none; }
 .message { position: absolute; z-index: 6; top: 15%; left: 50%; transform: translateX(-50%); width: min(90%, 620px); text-align: center; color: #e8fdff; font-size: clamp(1.2rem, 5vw, 2.8rem); text-shadow: 0 3px 0 #0c7785, 0 0 18px #60eaff; opacity: 0; transition: opacity .2s; pointer-events: none; }

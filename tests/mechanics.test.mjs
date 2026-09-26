@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { advanceEnemy, applyWater, clamp, MAX_AIM_YAW, resolveContact, stepAim } from '../src/mechanics.js';
+import { advanceEnemy, applyWater, clamp, MAX_AIM_YAW, resolveContact, stepAim, applyPowerUp, tickBoosts } from '../src/mechanics.js';
 
 assert.equal(clamp(140, 0, 100), 100);
 const target = { alive: true, freeze: 0, freezeRate: 50 };
@@ -16,4 +16,13 @@ assert.deepEqual(resolveContact(75, attacker), { health: 75, hit: false });
 assert.ok(Math.abs(MAX_AIM_YAW * 2 - 150 * Math.PI / 180) < 1e-9, 'total aim range is 150 degrees');
 assert.ok(Math.abs(stepAim(0, 3, .05) - 1.4 * .05) < 1e-9, 'aim turn speed is capped');
 assert.ok(Math.abs(stepAim(0, .01, .05) - .01 * .2) < 1e-9, 'small aim changes are smoothed');
+const game = { health: 60, boosts: { water: 0, slow: 0 } };
+applyPowerUp(game, 'heal'); assert.equal(game.health, 90);
+applyPowerUp(game, 'heal'); assert.equal(game.health, 100, 'healing caps at 100');
+applyPowerUp(game, 'water'); assert.equal(game.boosts.water, 8);
+tickBoosts(game.boosts, 3); assert.equal(game.boosts.water, 5);
+tickBoosts(game.boosts, 10); assert.equal(game.boosts.water, 0, 'boosts never go negative');
+const frozenA = { alive: true, freeze: 20 }, frozenB = { alive: true, freeze: 90 }, gone = { alive: false, freeze: 0 };
+applyPowerUp(game, 'bomb', [frozenA, frozenB, gone]);
+assert.equal(frozenA.freeze, 120); assert.equal(frozenB.freeze, 134, 'bomb freezes but does not shatter'); assert.equal(gone.freeze, 0);
 console.log('3D mechanics tests passed');

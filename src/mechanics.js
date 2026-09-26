@@ -30,3 +30,22 @@ export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4)
   const limit = maxSpeed * seconds;
   return current + clamp(step, -limit, limit);
 }
+
+export const MIN_AIM_PITCH = -.3; // 往下最多約 17 度
+export const MAX_AIM_PITCH = .25; // 往上最多約 14 度
+
+export const POWER_UP_TYPES = ['water', 'bomb', 'heal', 'slow'];
+export const POWER_UP_SECONDS = 8;
+
+export function applyPowerUp(game, type, enemies = []) {
+  if (type === 'heal') game.health = clamp(game.health + 30, 0, 100);
+  if (type === 'water') game.boosts.water = POWER_UP_SECONDS;
+  if (type === 'slow') game.boosts.slow = POWER_UP_SECONDS;
+  if (type === 'bomb') for (const enemy of enemies) if (enemy.alive) enemy.freeze = clamp(enemy.freeze + 100, 0, 134);
+  return game;
+}
+
+export function tickBoosts(boosts, seconds) {
+  for (const key of Object.keys(boosts)) boosts[key] = Math.max(0, boosts[key] - seconds);
+  return boosts;
+}
