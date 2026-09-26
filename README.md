@@ -2,6 +2,10 @@
 
 第一人稱固定站位的街機水槍射擊原型。左右轉動視角，按住噴水累積冰凍值；100% 凍結後繼續射擊即可擊碎敵人並觸發連鎖結冰。
 
+## 線上遊玩
+
+https://freshrogerchang-dev.github.io/monster-game/
+
 ## 啟動
 
 直接開啟 `index.html`，或在本資料夾執行：

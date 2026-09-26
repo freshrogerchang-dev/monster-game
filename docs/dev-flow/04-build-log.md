@@ -20,3 +20,8 @@
 
 - 建立 Canvas 場景、HUD、觸控與鍵盤控制、敵人狀態機、波次與計分。
 - 核心冰凍／連鎖規則拆至 `src/mechanics.js`，並加入 Node 單元測試。
+
+## 2026-09-26 發佈：GitHub Pages
+
+- 使用 `gh-pages` 分支部署靜態遊戲，避免依賴 GitHub Actions workflow 權限。
+- 公開網址：`https://freshrogerchang-dev.github.io/monster-game/`
