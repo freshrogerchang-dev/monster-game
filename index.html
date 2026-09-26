@@ -1,19 +1,24 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" translate="no">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#07131b">
+  <meta name="google" content="notranslate">
+  <meta name="format-detection" content="telephone=no">
   <title>冰水特攻隊 3D</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="notranslate">
   <main id="gameShell">
     <canvas id="game" aria-label="3D 第一人稱水槍射擊遊戲"></canvas>
     <header class="hud" aria-label="遊戲狀態">
       <div class="health-wrap"><span>生命</span><div class="health-track"><i id="healthBar"></i></div><strong id="healthText">100</strong></div>
       <div class="score"><span>分數</span><strong id="score">0</strong><button id="muteButton" class="mute" type="button">🔊</button></div>
     </header>
+    <div id="levelInfo" class="level-info"></div>
+    <div class="effect shield-fx" aria-hidden="true"></div>
+    <div class="effect stop-fx" aria-hidden="true"></div>
     <div class="crosshair" aria-hidden="true"><i></i><i></i></div>
     <div id="powerUp" class="power-up" aria-live="polite"></div>
     <div id="freezeMeter" class="freeze-meter" aria-hidden="true"><i></i></div>
@@ -22,8 +27,9 @@
     <section id="startPanel" class="panel">
       <p class="eyebrow">3D WATER BLASTER</p>
       <h1>冰水特攻隊</h1>
-      <p>轉動手機改變視角，按住畫面噴水。用水柱噴到發光的道具就能拿到！別讓殭屍碰到你！</p>
-      <button id="startButton">啟動水槍</button>
+      <p id="panelText"></p>
+      <button id="startButton" type="button">開始</button>
+      <div id="levelGrid" class="level-grid" aria-label="選擇關卡"></div>
       <small>iPhone 會詢問動作與方向權限</small>
     </section>
   </main>

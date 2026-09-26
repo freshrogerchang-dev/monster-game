@@ -4,7 +4,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
 export const ZOMBIE_TYPES = {
   normal: { scale: 1, speed: 1.15, damage: 20, rate: 40, points: 100, skin: 0x9bd48a, cloth: 0x4a7fc1, pants: 0x6b4f8a },
   fast: { scale: .85, speed: 2.2, damage: 14, rate: 57, points: 170, skin: 0xc7e38f, cloth: 0xf08a4b, pants: 0x3f6e8c },
-  tank: { scale: 1.3, speed: .72, damage: 28, rate: 25, points: 300, skin: 0x7fbf9a, cloth: 0x8f5fb8, pants: 0x4d5a66 }
+  tank: { scale: 1.3, speed: .72, damage: 28, rate: 25, points: 300, skin: 0x7fbf9a, cloth: 0x8f5fb8, pants: 0x4d5a66 },
+  boss: { scale: 2.1, speed: .5, damage: 45, rate: 9, points: 1500, skin: 0xb59be8, cloth: 0xe0457b, pants: 0x3b3f6e }
 };
 
 const geo = {
@@ -27,7 +28,10 @@ const geo = {
   leaf: new THREE.SphereGeometry(.08, 10, 6),
   capTop: new THREE.SphereGeometry(.44, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2),
   capBrim: new THREE.CylinderGeometry(.34, .34, .04, 20),
-  bandage: new THREE.TorusGeometry(.49, .06, 8, 28)
+  bandage: new THREE.TorusGeometry(.49, .06, 8, 28),
+  crown: new THREE.CylinderGeometry(.34, .3, .26, 10, 1, true),
+  gem: new THREE.OctahedronGeometry(.07),
+  hitbox: new THREE.CylinderGeometry(.55, .55, 2.3, 8)
 };
 const shared = {
   white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .25 }),
@@ -39,10 +43,13 @@ const shared = {
   stitch: new THREE.MeshStandardMaterial({ color: 0x2d2d3a, roughness: .8 }),
   leaf: new THREE.MeshStandardMaterial({ color: 0x5fd35a, roughness: .6 }),
   cap: new THREE.MeshStandardMaterial({ color: 0xe8474f, roughness: .5 }),
-  bandage: new THREE.MeshStandardMaterial({ color: 0xf4efe2, roughness: .9 })
+  bandage: new THREE.MeshStandardMaterial({ color: 0xf4efe2, roughness: .9 }),
+  crown: new THREE.MeshStandardMaterial({ color: 0xffd84a, metalness: .6, roughness: .3, side: THREE.DoubleSide }),
+  gem: new THREE.MeshBasicMaterial({ color: 0xff4f8b }),
+  hitbox: new THREE.MeshBasicMaterial({ visible: false })
 };
 
-function mesh(geometry, material, x = 0, y = 0, z = 0, parent) { const m = new THREE.Mesh(geometry, material); m.position.set(x, y, z); m.castShadow = true; parent?.add(m); return m; }
+function mesh(geometry, material, x = 0, y = 0, z = 0, parent) { const m = new THREE.Mesh(geometry, material); m.position.set(x, y, z); parent?.add(m); return m; }
 
 export function createZombieModel(type = 'normal') {
   const cfg = ZOMBIE_TYPES[type];
@@ -50,7 +57,7 @@ export function createZombieModel(type = 'normal') {
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
 
   // 身體
-  const torso = mesh(geo.torso, cloth, 0, 1.0, 0, body); if (type === 'tank') torso.scale.set(1.25, 1, 1.15);
+  const torso = mesh(geo.torso, cloth, 0, 1.0, 0, body); torso.castShadow = true; if (type === 'tank' || type === 'boss') torso.scale.set(1.25, 1, 1.15);
   mesh(geo.belly, pants, 0, .72, 0, body).scale.set(type === 'tank' ? 1.1 : .92, .55, .88);
   const patch = mesh(geo.patch, shared.patch, .12, 1.05, .29, body); patch.rotation.z = .2;
   for (const x of [-.06, .06]) { const s = mesh(geo.stitch, shared.stitch, .12 + x, 1.05, .32, body); s.rotation.z = .2; }
@@ -63,7 +70,7 @@ export function createZombieModel(type = 'normal') {
 
   // 大頭
   const head = new THREE.Group(); head.position.y = 1.72; body.add(head);
-  mesh(geo.head, skin, 0, 0, 0, head).scale.set(1.08, .98, 1);
+  const skull = mesh(geo.head, skin, 0, 0, 0, head); skull.scale.set(1.08, .98, 1); skull.castShadow = true;
   const bigEye = type === 'fast' ? -1 : 1; // 一大一小的眼睛比較俏皮
   for (const side of [-1, 1]) {
     const eye = new THREE.Group(); eye.position.set(side * .19, .05, .4); eye.scale.setScalar(side === bigEye ? 1.12 : .92); head.add(eye);
@@ -78,10 +85,13 @@ export function createZombieModel(type = 'normal') {
   // 造型配件
   if (type === 'normal') { const sprout = mesh(geo.sprout, shared.leaf, 0, .56, 0, head); sprout.rotation.z = .2; for (const side of [-1, 1]) mesh(geo.leaf, shared.leaf, side * .09 + .04, .68, 0, head).scale.set(1.3, .5, .8); }
   if (type === 'fast') { const cap = mesh(geo.capTop, shared.cap, 0, .3, -.06, head); cap.rotation.x = -.3; const brim = mesh(geo.capBrim, shared.cap, 0, .36, .26, head); brim.scale.set(.9, 1, .75); brim.rotation.x = .25; }
+  if (type === 'boss') { const crown = mesh(geo.crown, shared.crown, 0, .52, 0, head); for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(geo.gem, shared.gem, Math.sin(a) * .33, .52, Math.cos(a) * .33, head); const spike = mesh(geo.sprout, shared.crown, Math.sin(a) * .3, .75, Math.cos(a) * .3, head); spike.scale.set(1.2, .9, 1.2); } }
   if (type === 'tank') { const band = mesh(geo.bandage, shared.bandage, 0, .16, 0, head); band.rotation.x = Math.PI / 2 - .25; band.scale.set(1.04, 1, 1); }
 
+  // 瞄準用的隱形碰撞體：只對它做射線判定，比逐一檢查三十幾個零件快很多
+  const hitbox = mesh(geo.hitbox, shared.hitbox, 0, 1.15, 0, root); hitbox.userData.enemyRoot = root;
   root.scale.setScalar(cfg.scale);
-  return { root, body, head, limbs, parts: [skin, cloth, pants], baseColors: [skin.color.clone(), cloth.color.clone(), pants.color.clone()] };
+  return { root, hitbox, body, head, limbs, parts: [skin, cloth, pants], baseColors: [skin.color.clone(), cloth.color.clone(), pants.color.clone()] };
 }
 
 const iceColor = new THREE.Color(0xa8f1ff);
