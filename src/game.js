@@ -1,27 +1,50 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { advanceEnemy, applyModeStats, applyWater, clamp, MODE_RULES, resolveContact } from './mechanics.js';
+import { buildScene } from './scene.js';
+import { animateZombie, createZombieModel, ZOMBIE_TYPES } from './zombie.js';
+import { initAudio, isMuted, setSpraying, sfx, toggleMute } from './audio.js';
+import { LEVELS, MAX_ALIVE, loadProgress, saveProgress, waveTypes } from './levels.js';
+import { advanceEnemy, applyModeStats, applyPowerUp, applyWater, clamp, emptyBoosts, enemyTimeScale, MODE_RULES, MAX_AIM_PITCH, MAX_AIM_YAW, MIN_AIM_PITCH, POWER_UP_TYPES, relativeAngle, resolveContact, stepAim, tickBoosts } from './mechanics.js';
 
-const canvas = document.querySelector('#game');
-const ui = { panel: document.querySelector('#startPanel'), panelText: document.querySelector('#panelText'), modeButtons: [...document.querySelectorAll('.mode-button')], modeBadge: document.querySelector('#modeBadge'), healthBar: document.querySelector('#healthBar'), healthText: document.querySelector('#healthText'), score: document.querySelector('#score'), message: document.querySelector('#message'), flash: document.querySelector('#hitFlash'), meter: document.querySelector('#freezeMeter'), meterFill: document.querySelector('#freezeMeter i'), crosshair: document.querySelector('.crosshair') };
+const EYE_HEIGHT = 2.05, GYRO_SENSITIVITY = .5, AIM_SMOOTHING = 3, AIM_MAX_SPEED = .9;
+const POWER_UPS = {
+  water: { label: '超級水柱', icon: '💧', color: 0x3fd8ff },
+  bomb: { label: '冰凍炸彈', icon: '❄️', color: 0xb8f6ff },
+  heal: { label: '補血 +30', icon: '❤️', color: 0xff6f91 },
+  slow: { label: '殭屍變慢', icon: '🐢', color: 0xc38bff },
+  shield: { label: '泡泡護盾', icon: '🫧', color: 0x7fe0ff },
+  double: { label: '分數加倍', icon: '⭐', color: 0xffd84a },
+  stop: { label: '時間暫停', icon: '⏰', color: 0xa0ffb0 }
+};
+const TIMED = ['water', 'slow', 'shield', 'double', 'stop'];
+
+const $ = s => document.querySelector(s);
+const canvas = $('#game');
+const ui = { shell: $('#gameShell'), levelInfo: $('#levelInfo'), mute: $('#muteButton'), powerUp: $('#powerUp'), panel: $('#startPanel'), title: $('#startPanel h1'), text: $('#panelText'), start: $('#startButton'), grid: $('#levelGrid'), modeButtons: [...document.querySelectorAll('.mode-button')], modeBadge: $('#modeBadge'), healthBar: $('#healthBar'), healthText: $('#healthText'), score: $('#score'), message: $('#message'), flash: $('#hitFlash'), meter: $('#freezeMeter'), meterFill: $('#freezeMeter i'), crosshair: $('.crosshair') };
+
+// ── 渲染器：畫面不順時自動降低解析度，最後關掉陰影 ──
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
-const scene = new THREE.Scene(); scene.background = new THREE.Color(0x07131b); scene.fog = new THREE.FogExp2(0x07131b, 0.032);
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .05, 120); camera.position.set(0, 1.7, 4.8); camera.rotation.order = 'YXZ'; scene.add(camera);
-scene.add(new THREE.HemisphereLight(0x84cce8, 0x172018, 1.8));
-const moon = new THREE.DirectionalLight(0xb9eaff, 3.4); moon.position.set(-8, 16, 2); moon.castShadow = true; scene.add(moon);
-const redGlow = new THREE.PointLight(0xff4a2d, 15, 20); redGlow.position.set(10, 4, -18); scene.add(redGlow);
-const cyanGlow = new THREE.PointLight(0x2de8ff, 14, 18); cyanGlow.position.set(-9, 3, -8); scene.add(cyanGlow);
-const state = { running: false, spraying: false, mode: 'child', health: 100, score: 0, wave: 0, enemies: [], particles: [], spawnTimer: 0, yaw: 0, pitch: 0, baseAlpha: null, dragX: 0, dragY: 0, dragging: false };
-const raycaster = new THREE.Raycaster(), center = new THREE.Vector2(0, 0), clock = new THREE.Clock();
-
-function addEnvironment() {
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 120), new THREE.MeshStandardMaterial({ color: 0x17201d, roughness: .94 })); ground.rotation.x = -Math.PI / 2; ground.position.z = -30; ground.receiveShadow = true; scene.add(ground);
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(13, 100), new THREE.MeshStandardMaterial({ color: 0x20272a, roughness: 1 })); road.rotation.x = -Math.PI / 2; road.position.set(0, .012, -28); road.receiveShadow = true; scene.add(road);
-  for (let z = 0; z > -75; z -= 8) { const stripe = new THREE.Mesh(new THREE.PlaneGeometry(.28, 3.4), new THREE.MeshBasicMaterial({ color: 0x8b8e73 })); stripe.rotation.x = -Math.PI / 2; stripe.position.set(0, .025, z); scene.add(stripe); }
-  for (let side of [-1, 1]) for (let i = 0; i < 7; i++) { const height = 4 + Math.random() * 2; const booth = new THREE.Mesh(new THREE.BoxGeometry(5.5, height, 5), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x3d2529 : 0x243c42, roughness: .85 })); booth.position.set(side * (9 + Math.random() * 5), height / 2, -5 - i * 11); booth.castShadow = true; scene.add(booth); const roof = new THREE.Mesh(new THREE.ConeGeometry(4.3, 2.2, 4), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x27434a : 0x51343e, roughness: .8 })); roof.rotation.y = Math.PI / 4; roof.position.set(booth.position.x, height + 1.1, booth.position.z); scene.add(roof); }
-  const wheel = new THREE.Group(); wheel.position.set(-18, 10, -42); const ringMat = new THREE.MeshStandardMaterial({ color: 0x74436f, emissive: 0x210d22 }); wheel.add(new THREE.Mesh(new THREE.TorusGeometry(8, .28, 8, 32), ringMat)); for (let i = 0; i < 10; i++) { const spoke = new THREE.Mesh(new THREE.BoxGeometry(.12, 15.5, .12), ringMat); spoke.rotation.z = i * Math.PI / 10; wheel.add(spoke); } scene.add(wheel);
-  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(3.8, 20, 14), new THREE.MeshBasicMaterial({ color: 0xe7e0af })); moonMesh.position.set(17, 20, -52); scene.add(moonMesh);
+const quality = { ratios: [Math.min(devicePixelRatio, 1.75), 1.25, 1], level: 0, frames: 0, time: 0 };
+renderer.setPixelRatio(quality.ratios[0]); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+function watchPerformance(dt) {
+  quality.frames++; quality.time += dt;
+  if (quality.time < 2.5) return; const fps = quality.frames / quality.time; quality.frames = 0; quality.time = 0;
+  if (fps >= 40 || quality.level >= quality.ratios.length) return;
+  quality.level++;
+  if (quality.level < quality.ratios.length) renderer.setPixelRatio(quality.ratios[quality.level]);
+  else { renderer.shadowMap.enabled = false; lights.sun.castShadow = false; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); }); }
+  resize();
 }
+
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b1a26); scene.fog = new THREE.FogExp2(0x1a2240, 0.018);
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .05, 200); camera.position.set(0, EYE_HEIGHT, 4.8); camera.rotation.order = 'YXZ'; scene.add(camera);
+const lights = { hemi: new THREE.HemisphereLight(0x9fb8ff, 0x2a2a3a, 2.1), sun: new THREE.DirectionalLight(0xb9eaff, 3.4) };
+lights.sun.position.set(-8, 16, 2); lights.sun.castShadow = true; lights.sun.shadow.mapSize.set(1024, 1024); Object.assign(lights.sun.shadow.camera, { left: -20, right: 20, top: 20, bottom: -30, far: 60 });
+scene.add(lights.hemi, lights.sun);
+
+const state = { running: false, spraying: false, mode: null, health: 100, score: 0, levelScore: 0, level: 0, wave: 0, queue: [], spawnTimer: 0, waveTimer: 0, enemies: [], items: [], itemTimer: 0, boosts: emptyBoosts(), yaw: 0, pitch: 0, baseYaw: null, basePitch: null, dragX: 0, dragY: 0, dragging: false, groanTimer: 3, unlocked: loadProgress(localStorage) };
+const raycaster = new THREE.Raycaster(), center = new THREE.Vector2(0, 0), clock = new THREE.Clock(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3();
+let world = null, worldTheme = null;
+function useTheme(theme) { if (worldTheme === theme) return; world?.dispose(); world = buildScene(scene, theme, lights); worldTheme = theme; }
 
 function createBlaster() {
   const gun = new THREE.Group(), blue = new THREE.MeshStandardMaterial({ color: 0x21bfd5, roughness: .35, metalness: .15 }), yellow = new THREE.MeshStandardMaterial({ color: 0xffd849, roughness: .45 });
@@ -30,42 +53,178 @@ function createBlaster() {
   const flower = new THREE.Group(); flower.position.z = -.98; for (let i = 0; i < 8; i++) { const petal = new THREE.Mesh(new THREE.SphereGeometry(.11, 10, 8), yellow); const a = i * Math.PI / 4; petal.position.set(Math.cos(a) * .17, Math.sin(a) * .17, 0); petal.scale.set(1.25, .7, .45); flower.add(petal); } const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(.1, .12, .12, 14), blue); nozzle.rotation.x = Math.PI / 2; flower.add(nozzle); gun.add(flower);
   gun.position.set(.42, -.5, -1.05); gun.rotation.set(-.06, -.06, 0); camera.add(gun); return { gun, flower };
 }
+const blaster = createBlaster();
 
-function zombieMaterial(color) { return new THREE.MeshStandardMaterial({ color, roughness: .82, emissive: 0x000000 }); }
+// ── 粒子池：水滴與冰塊碎片都用 InstancedMesh，不再每幀新建幾何體與材質 ──
+function createPool(geometry, material, size) {
+  const mesh = new THREE.InstancedMesh(geometry, material, size); mesh.frustumCulled = false; mesh.count = 0; scene.add(mesh);
+  return { mesh, items: [], size, matrix: new THREE.Matrix4(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(), axis: new THREE.Vector3(1, 1, 0).normalize() };
+}
+const waterPool = createPool(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0x60eaff, transparent: true, opacity: .8 }), 360);
+const shardPool = createPool(new THREE.TetrahedronGeometry(1), new THREE.MeshBasicMaterial({ color: 0x9af3ff, transparent: true, opacity: .9 }), 300);
+function emit(pool, position, velocity, life, size, gravity = 0) { if (pool.items.length >= pool.size) return; pool.items.push({ p: position.clone(), v: velocity.clone(), life, max: life, size, gravity, spin: Math.random() * 6 }); }
+function updatePool(pool, dt) {
+  for (let i = pool.items.length - 1; i >= 0; i--) { if ((pool.items[i].life -= dt) <= 0) { pool.items[i] = pool.items[pool.items.length - 1]; pool.items.pop(); } }
+  let n = 0;
+  for (const it of pool.items) { it.v.y -= it.gravity * dt; it.p.addScaledVector(it.v, dt); it.spin += dt * 6; const s = it.size * Math.min(1, it.life / it.max * 1.6); pool.quat.setFromAxisAngle(pool.axis, it.spin); pool.matrix.compose(it.p, pool.quat, pool.scale.set(s, s, s)); pool.mesh.setMatrixAt(n++, pool.matrix); }
+  pool.mesh.count = n; pool.mesh.instanceMatrix.needsUpdate = true;
+}
+
+// ── 殭屍 ──
 function createZombie(type = 'normal') {
-  const base = type === 'fast' ? { scale: .82, speed: 2.2, damage: 14, freezeRate: 57, color: 0xb89152 } : type === 'tank' ? { scale: 1.35, speed: .72, damage: 28, freezeRate: 25, color: 0x5f8057 } : { scale: 1, speed: 1.15, damage: 20, freezeRate: 40, color: 0x789c68 };
-  const config = applyModeStats(base, state.mode);
-  const group = new THREE.Group(); group.userData.enemyRoot = group; const skin = zombieMaterial(config.color), cloth = zombieMaterial(type === 'fast' ? 0x7b3433 : 0x334552);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(.75, 1.05, .42), cloth); body.position.y = 1.35; body.castShadow = true; group.add(body); const head = new THREE.Mesh(new THREE.SphereGeometry(.38, 10, 8), skin); head.position.y = 2.12; head.scale.y = 1.12; head.castShadow = true; group.add(head);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: state.mode === 'child' ? 0xffdf52 : 0xff3a28 }); for (let x of [-.14, .14]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(.04, 7, 5), eyeMat); eye.position.set(x, 2.17, .35); group.add(eye); }
-  const limbs = []; for (let x of [-.52, .52]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(.22, .95, .22), skin); arm.position.set(x, 1.38, .16); arm.rotation.x = -1.05; arm.castShadow = true; group.add(arm); limbs.push(arm); } for (let x of [-.23, .23]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(.27, .85, .3), cloth); leg.position.set(x, .45, 0); leg.castShadow = true; group.add(leg); limbs.push(leg); }
-  const distance = 18 + Math.random() * 18, angle = (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, 0, camera.position.z - Math.cos(angle) * distance); group.scale.setScalar(config.scale);
-  Object.assign(group.userData, { type, alive: true, freeze: 0, freezeRate: config.freezeRate, speed: config.speed, damage: config.damage, distance, parts: [skin, cloth], limbs, phase: Math.random() * 6, points: type === 'tank' ? 300 : type === 'fast' ? 170 : 100 }); scene.add(group); state.enemies.push(group); return group;
+  const cfg = ZOMBIE_TYPES[type], tuned = applyModeStats({ speed: cfg.speed, damage: cfg.damage, freezeRate: cfg.rate }, state.mode), model = createZombieModel(type), group = model.root; group.userData.enemyRoot = group;
+  const boss = type === 'boss', distance = boss ? 32 : 18 + Math.random() * 18, angle = boss ? 0 : (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, 0, camera.position.z - Math.cos(angle) * distance);
+  Object.assign(group.userData, { type, alive: true, freeze: 0, freezeRate: tuned.freezeRate, speed: tuned.speed, damage: tuned.damage, distance, points: cfg.points, phase: Math.random() * 6, animTime: 0, contact: 1.35 + (cfg.scale - 1) * .9, hitbox: model.hitbox, body: model.body, head: model.head, limbs: model.limbs, parts: model.parts, baseColors: model.baseColors });
+  scene.add(group); state.enemies.push(group);
+  if (boss) { announce('大魔王出現了！'); sfx.boss(); }
+}
+function removeEnemy(enemy) { scene.remove(enemy); enemy.userData.parts.forEach(m => m.dispose()); state.enemies = state.enemies.filter(e => e !== enemy); }
+function updateEnemy(enemy, dt) {
+  const data = enemy.userData; if (!data.alive) return;
+  tmp.set(camera.position.x - enemy.position.x, 0, camera.position.z - enemy.position.z); data.distance = tmp.length(); advanceEnemy(data, dt);
+  if (data.freeze < 100) enemy.position.addScaledVector(tmp.normalize(), data.speed * (1 - clamp(data.freeze / 125, 0, .8)) * dt);
+  enemy.lookAt(camera.position.x, enemy.position.y, camera.position.z);
+  data.animTime += dt; animateZombie(data, data.animTime, data.freeze);
+  if (data.distance > data.contact) return;
+  if (state.boosts.shield > 0) { shatter(enemy); sfx.shield(); announce('泡泡護盾擋住了！'); return; }
+  const contact = resolveContact(state.health, data, data.contact); if (contact.hit) { state.health = contact.health; removeEnemy(enemy); hitPlayer(); updateHud(); if (state.health <= 0) gameOver(); }
 }
 
-addEnvironment(); const blaster = createBlaster();
-function spawnWave() { state.wave += 1; const rules = MODE_RULES[state.mode], count = Math.min(rules.baseEnemies + state.wave, rules.maxEnemies); for (let i = 0; i < count; i++) createZombie(state.wave > 2 && i % 4 === 0 ? 'tank' : state.wave > 1 && i % 3 === 0 ? 'fast' : 'normal'); announce(state.mode === 'child' ? `第 ${state.wave} 波怪物來囉！` : `第 ${state.wave} 波逼近`); }
-function updateEnemy(enemy, dt, elapsed) {
-  const data = enemy.userData; if (!data.alive) return; const toPlayer = new THREE.Vector3(camera.position.x - enemy.position.x, 0, camera.position.z - enemy.position.z); data.distance = toPlayer.length(); advanceEnemy(data, dt); if (data.freeze < 100) enemy.position.addScaledVector(toPlayer.normalize(), data.speed * (1 - clamp(data.freeze / 125, 0, .8)) * dt); enemy.lookAt(camera.position.x, enemy.position.y, camera.position.z);
-  const walk = Math.sin(elapsed * 7 * data.speed + data.phase) * .42 * (1 - data.freeze / 100); data.limbs[0].rotation.x = -1 + walk; data.limbs[1].rotation.x = -1 - walk; data.limbs[2].rotation.x = walk; data.limbs[3].rotation.x = -walk;
-  const ice = clamp(data.freeze / 100, 0, 1), base = new THREE.Color(data.type === 'fast' ? 0xb89152 : data.type === 'tank' ? 0x5f8057 : 0x789c68); for (const mat of data.parts) { mat.color.lerpColors(base, new THREE.Color(0x83eaff), ice); mat.emissive.setRGB(0, ice * .12, ice * .17); }
-  const contact = resolveContact(state.health, data, 1.35); if (contact.hit) { state.health = contact.health; scene.remove(enemy); hitPlayer(); updateHud(); if (state.health <= 0) gameOver(); }
+// ── 瞄準：只對每隻殭屍的隱形碰撞體做射線判定 ──
+function aimOffsets() { const spread = state.boosts.water > 0 ? .2 : .13, aspect = camera.aspect; const offsets = [[0, 0]]; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; offsets.push([Math.cos(a) * spread / aspect, Math.sin(a) * spread]); } return offsets; }
+function castAim(objects, recursive) { if (!objects.length) return null; let best = null; for (const [x, y] of aimOffsets()) { center.set(x, y); raycaster.setFromCamera(center, camera); const hit = raycaster.intersectObjects(objects, recursive)[0]; if (hit && (!best || hit.distance < best.distance)) best = hit; if (best && x === 0 && y === 0) break; } center.set(0, 0); return best; }
+function targetEnemy() { const hit = castAim(state.enemies.filter(e => e.userData.alive).map(e => e.userData.hitbox), false); return hit ? hit.object.userData.enemyRoot : null; }
+function sprayAt(enemy, dt) {
+  blaster.gun.position.y = -.5 + Math.sin(performance.now() * .035) * .012; blaster.flower.rotation.z += dt * 13;
+  const big = state.boosts.water > 0 ? 1.5 : 1; tmp3.set(.42, -.5, -1.95).applyMatrix4(camera.matrixWorld);
+  for (let i = 0; i < (big > 1 ? 4 : 3); i++) emit(waterPool, tmp3, tmp2.set((Math.random() - .5) * .09 * big, (Math.random() - .5) * .09 * big, -1).normalize().applyQuaternion(camera.quaternion).multiplyScalar(18 + Math.random() * 6), .55, (.12 + Math.random() * .1) * big);
+  collectAimedItem();
+  if (!enemy) { ui.crosshair.classList.remove('locked'); ui.meter.classList.remove('visible'); return; }
+  ui.crosshair.classList.add('locked'); ui.meter.classList.add('visible');
+  const result = applyWater(enemy.userData, big > 1 ? dt * 2 : dt); ui.meterFill.style.width = `${Math.min(enemy.userData.freeze, 100)}%`;
+  if (result.justFrozen) { announce('完全冰凍！繼續噴！'); sfx.freeze(); } if (result.shattered) shatter(enemy);
 }
-function findEnemyRoot(object) { let current = object; while (current && !current.userData.enemyRoot) current = current.parent; return current?.userData.enemyRoot || null; }
-function targetEnemy() { raycaster.setFromCamera(center, camera); const hits = raycaster.intersectObjects(state.enemies.filter(e => e.userData.alive), true); return hits[0] ? findEnemyRoot(hits[0].object) : null; }
-function sprayAt(enemy, dt) { blaster.gun.position.y = -.5 + Math.sin(performance.now() * .035) * .012; blaster.flower.rotation.z += dt * 13; makeWaterParticle(); if (!enemy) { ui.crosshair.classList.remove('locked'); ui.meter.classList.remove('visible'); return; } ui.crosshair.classList.add('locked'); ui.meter.classList.add('visible'); const result = applyWater(enemy.userData, dt); ui.meterFill.style.width = `${Math.min(enemy.userData.freeze, 100)}%`; if (result.justFrozen) announce('完全冰凍！繼續噴！'); if (result.shattered) shatter(enemy); }
-function makeWaterParticle() { if (state.particles.length > 85) return; const drop = new THREE.Mesh(new THREE.SphereGeometry(.035 + Math.random() * .04, 5, 4), new THREE.MeshBasicMaterial({ color: 0x60eaff, transparent: true, opacity: .82 })); const origin = new THREE.Vector3(.42, -.5, -1.95).applyMatrix4(camera.matrixWorld), direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); drop.position.copy(origin); drop.userData.velocity = direction.multiplyScalar(18 + Math.random() * 6); drop.userData.life = .55; scene.add(drop); state.particles.push(drop); }
-function shatter(enemy) { enemy.userData.alive = false; state.score += enemy.userData.points; updateHud(); announce('冰塊擊破！'); for (let i = 0; i < 22; i++) { const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(.09 + Math.random() * .15), new THREE.MeshBasicMaterial({ color: 0x9af3ff, transparent: true })); shard.position.copy(enemy.position).add(new THREE.Vector3((Math.random()-.5), .5+Math.random()*2, (Math.random()-.5))); shard.userData.velocity = new THREE.Vector3((Math.random()-.5)*5, Math.random()*5, (Math.random()-.5)*5); shard.userData.life = 1.2; scene.add(shard); state.particles.push(shard); } scene.remove(enemy); ui.meter.classList.remove('visible'); ui.crosshair.classList.remove('locked'); }
-function updateParticles(dt) { state.particles = state.particles.filter(p => { p.userData.life -= dt; if (p.userData.life <= 0) { scene.remove(p); p.geometry.dispose(); p.material.dispose(); return false; } p.position.addScaledVector(p.userData.velocity, dt); if (p.geometry.type === 'TetrahedronGeometry') p.userData.velocity.y -= 6 * dt; p.material.opacity = clamp(p.userData.life, 0, .8); return true; }); }
+function shatter(enemy) {
+  const data = enemy.userData; data.alive = false; const points = data.points * (state.boosts.double > 0 ? 2 : 1); state.score += points; state.levelScore += points; updateHud();
+  announce(state.boosts.double > 0 ? `冰塊擊破！+${points} ⭐` : data.type === 'boss' ? '打倒大魔王了！' : '冰塊擊破！'); sfx.shatter();
+  const scale = ZOMBIE_TYPES[data.type].scale, count = data.type === 'boss' ? 70 : 22;
+  for (let i = 0; i < count; i++) emit(shardPool, tmp.copy(enemy.position).add(tmp3.set((Math.random() - .5) * scale, (.5 + Math.random() * 2) * scale, (Math.random() - .5) * scale)), tmp2.set((Math.random() - .5) * 5, Math.random() * 5, (Math.random() - .5) * 5), 1.2, (.09 + Math.random() * .15) * Math.sqrt(scale), 6);
+  removeEnemy(enemy); ui.meter.classList.remove('visible'); ui.crosshair.classList.remove('locked');
+}
+
+// ── 道具 ──
+const iconTextures = {};
+function iconTexture(type) { if (iconTextures[type]) return iconTextures[type]; const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.fillStyle = 'rgba(255,255,255,.92)'; g.beginPath(); g.arc(64, 64, 58, 0, 7); g.fill(); g.font = '72px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(POWER_UPS[type].icon, 64, 70); const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return (iconTextures[type] = tex); }
+function spawnItem() {
+  const type = POWER_UP_TYPES[Math.floor(Math.random() * POWER_UP_TYPES.length)], color = POWER_UPS[type].color, item = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(.42), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .7, roughness: .3 })), halo = new THREE.Mesh(new THREE.TorusGeometry(.62, .05, 8, 28), new THREE.MeshBasicMaterial({ color }));
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture(type), depthTest: false })); icon.scale.setScalar(.8); icon.position.y = 1; icon.renderOrder = 5;
+  item.add(core, halo, icon);
+  const distance = 7 + Math.random() * 7, angle = (Math.random() - .5) * 1.6; item.position.set(Math.sin(angle) * distance, 1.6 + Math.random() * .6, camera.position.z - Math.cos(angle) * distance);
+  Object.assign(item.userData, { itemRoot: item, type, life: 12, baseY: item.position.y, halo }); scene.add(item); state.items.push(item); announce(`出現道具：${POWER_UPS[type].icon} ${POWER_UPS[type].label}`); sfx.itemSpawn();
+}
+function removeItem(item) { scene.remove(item); item.traverse(o => { if (!o.isSprite) o.geometry?.dispose(); o.material?.dispose(); }); state.items = state.items.filter(i => i !== item); }
+function updateItems(dt, elapsed) {
+  state.itemTimer += dt; if (state.itemTimer > 10 && state.items.length < 2) { state.itemTimer = 0; spawnItem(); }
+  for (const item of [...state.items]) { const data = item.userData; data.life -= dt; item.rotation.y += dt * 1.6; item.position.y = data.baseY + Math.sin(elapsed * 2.5 + data.life) * .18; data.halo.rotation.x = elapsed * 2; item.visible = data.life > 3 || Math.floor(data.life * 6) % 2 === 0; if (data.life <= 0) removeItem(item); }
+}
+function collectAimedItem() {
+  const hit = castAim(state.items, true); if (!hit) return; let root = hit.object; while (root && !root.userData.itemRoot) root = root.parent; if (!root) return;
+  const type = root.userData.type; applyPowerUp(state, type, state.enemies.map(e => e.userData)); removeItem(root); announce(`獲得 ${POWER_UPS[type].icon} ${POWER_UPS[type].label}！`); sfx.powerUp(); updateHud();
+}
+function updatePowerUpHud() {
+  const text = TIMED.filter(k => state.boosts[k] > 0).map(k => `${POWER_UPS[k].icon} ${Math.ceil(state.boosts[k])}s`).join('　');
+  if (ui.powerUp.textContent !== text) ui.powerUp.textContent = text; ui.powerUp.classList.toggle('visible', !!text);
+  ui.shell.classList.toggle('shielded', state.boosts.shield > 0); ui.shell.classList.toggle('time-stopped', state.boosts.stop > 0);
+}
+
+// ── 關卡流程 ──
+function levelLabel() { const lv = LEVELS[state.level]; return `第 ${state.level + 1} 關 ${lv.name}・第 ${state.wave + 1}/${lv.waves.length} 波`; }
+function startWave() { const source = waveTypes(state.level, state.wave); state.queue = state.mode === 'adult' ? [...source, ...source.slice(0, Math.ceil(source.length * .35))] : source.slice(0, Math.max(1, Math.ceil(source.length * .72))); state.spawnTimer = .3; ui.levelInfo.textContent = levelLabel(); announce(state.mode === 'child' ? `第 ${state.wave + 1} 波怪物來囉！` : state.wave === LEVELS[state.level].waves.length - 1 ? '最後一波逼近！' : `第 ${state.wave + 1} 波逼近`); sfx.wave(); }
+function updateSpawning(dt) {
+  const alive = state.enemies.filter(e => e.userData.alive).length;
+  if (state.queue.length) { state.spawnTimer -= dt; if (state.spawnTimer <= 0 && alive < Math.min(MODE_RULES[state.mode].maxEnemies, state.mode === 'adult' ? MAX_ALIVE + 2 : MAX_ALIVE)) { createZombie(state.queue.shift()); state.spawnTimer = state.mode === 'adult' ? .68 : 1.05; } return; }
+  if (alive) return;
+  state.waveTimer += dt; if (state.waveTimer < 1.6) return; state.waveTimer = 0;
+  if (state.wave + 1 < LEVELS[state.level].waves.length) { state.wave++; startWave(); } else levelComplete();
+}
+function clearField() { [...state.enemies].forEach(removeEnemy); [...state.items].forEach(removeItem); waterPool.items.length = 0; shardPool.items.length = 0; }
+let starting = false;
+async function startLevel(index, keepScore = false) {
+  if (starting || !state.mode) return; starting = true; // 連點兩下只開始一次
+  initAudio(); sfx.start();
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') announce('未允許感測器，可用手指拖曳視角'); } catch { announce('可用手指拖曳視角'); } }
+  clearField(); useTheme(LEVELS[index].theme); renderer.toneMappingExposure = state.mode === 'child' ? 1.35 : .82; document.body.dataset.mode = state.mode;
+  Object.assign(state, { running: true, spraying: false, health: 100, score: keepScore ? state.score : 0, levelScore: 0, level: index, wave: 0, queue: [], waveTimer: 0, itemTimer: 5, boosts: emptyBoosts(), baseYaw: null, basePitch: null, groanTimer: 3, yaw: 0, pitch: 0 });
+  camera.rotation.set(0, 0, 0); ui.panel.classList.add('hidden'); ui.levelInfo.classList.add('visible'); updateHud(); startWave(); clock.start(); starting = false;
+}
+function showPanel(title, text, action, onAction) { ui.title.textContent = title; ui.text.textContent = text; ui.start.textContent = action; ui.start.onclick = onAction; ui.start.hidden = !state.mode; renderLevelGrid(); ui.panel.classList.remove('hidden'); ui.levelInfo.classList.remove('visible'); }
+function stopPlay() { state.running = false; state.spraying = false; setSpraying(false); ui.shell.classList.remove('shielded', 'time-stopped'); ui.powerUp.classList.remove('visible'); ui.meter.classList.remove('visible'); }
+function levelComplete() {
+  stopPlay(); sfx.levelClear(); const next = state.level + 1;
+  if (next < LEVELS.length && next + 1 > state.unlocked) { state.unlocked = next + 1; saveProgress(localStorage, state.unlocked); }
+  if (next >= LEVELS.length) { showPanel('全部通關！🎉', `你打敗了大魔王，總共 ${state.score} 分！`, '再玩一次', () => startLevel(0)); return; }
+  showPanel('過關！', `第 ${state.level + 1} 關完成，這關得到 ${state.levelScore} 分。下一關：${LEVELS[next].name}`, '下一關 →', () => startLevel(next, true));
+}
+function gameOver() { stopPlay(); sfx.gameOver(); showPanel(state.mode === 'child' ? '做得很好！' : '防線失守', state.mode === 'child' ? `你已經守到第 ${state.level + 1} 關，選版本再挑戰一次！` : `第 ${state.level + 1} 關 ${LEVELS[state.level].name}，重新整備！`, '再試一次', () => startLevel(state.level)); }
+function renderLevelGrid() {
+  if (!state.mode) { ui.grid.replaceChildren(); return; }
+  ui.grid.replaceChildren(...LEVELS.map((lv, i) => { const b = document.createElement('button'), locked = i + 1 > state.unlocked; b.type = 'button'; b.className = 'level-button'; b.disabled = locked; b.innerHTML = `<b>${locked ? '🔒' : i + 1}</b><span>${lv.name}</span>`; b.classList.toggle('current', i === state.level); b.addEventListener('click', () => startLevel(i)); return b; }));
+}
+
+// ── HUD 與訊息 ──
 function updateHud() { ui.healthBar.style.width = `${state.health}%`; ui.healthText.textContent = Math.ceil(state.health); ui.score.textContent = state.score; ui.healthBar.style.background = state.health < 35 ? '#ff4d4d' : 'linear-gradient(90deg, #37e0c1, #b6f25a)'; }
-function hitPlayer() { ui.flash.classList.add('show'); announce(state.mode === 'child' ? '怪物碰到你了，沒關係再瞄準！' : '殭屍突破防線！'); setTimeout(() => ui.flash.classList.remove('show'), 180); }
-function announce(text) { ui.message.textContent = text; ui.message.classList.add('show'); clearTimeout(announce.timer); announce.timer = setTimeout(() => ui.message.classList.remove('show'), 950); }
-function gameOver() { state.running = false; state.spraying = false; ui.panel.classList.remove('hidden'); ui.panel.querySelector('h1').textContent = state.mode === 'child' ? '做得很好！' : '防線失守'; ui.panelText.textContent = `本次得到 ${state.score} 分，選擇版本再挑戰一次。`; }
-function handleOrientation(event) { if (!state.running || event.alpha == null) return; if (state.baseAlpha == null) state.baseAlpha = event.alpha; let delta = event.alpha - state.baseAlpha; if (delta > 180) delta -= 360; if (delta < -180) delta += 360; state.yaw = THREE.MathUtils.degToRad(-delta); state.pitch = clamp(THREE.MathUtils.degToRad((event.beta ?? 90) - 90), -.62, .5); }
-async function startGame(mode) { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') announce('未允許感測器，可用手指拖曳視角'); } catch { announce('可用手指拖曳視角'); } } state.enemies.forEach(e => scene.remove(e)); state.enemies = []; Object.assign(state, { running: true, spraying: false, mode, health: 100, score: 0, wave: 0, spawnTimer: 0, baseAlpha: null, yaw: 0, pitch: 0 }); const child = mode === 'child'; scene.background.set(child ? 0x17394a : 0x05080f); scene.fog.color.set(child ? 0x17394a : 0x05080f); scene.fog.density = child ? .024 : .042; renderer.toneMappingExposure = child ? 1.35 : .9; ui.modeBadge.textContent = child ? '🌈 小孩版' : '🌙 成人版'; document.body.dataset.mode = mode; camera.rotation.set(0, 0, 0); ui.panel.classList.add('hidden'); updateHud(); spawnWave(); clock.start(); }
-function loop() { requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), .05), elapsed = clock.elapsedTime; if (state.running) { camera.rotation.y += (state.yaw - camera.rotation.y) * Math.min(1, dt * 9); camera.rotation.x += (state.pitch - camera.rotation.x) * Math.min(1, dt * 9); const enemy = targetEnemy(); if (state.spraying) sprayAt(enemy, dt); else { ui.crosshair.classList.toggle('locked', !!enemy); ui.meter.classList.remove('visible'); } state.enemies.forEach(e => updateEnemy(e, dt, elapsed)); updateParticles(dt); if (state.enemies.every(e => !e.userData.alive)) { state.spawnTimer += dt; if (state.spawnTimer > 1.5) { state.spawnTimer = 0; spawnWave(); } } } renderer.render(scene, camera); }
+function hitPlayer() { ui.flash.classList.add('show'); announce(state.mode === 'child' ? '怪物碰到你了，沒關係再瞄準！' : '殭屍突破防線！'); sfx.hurt(); setTimeout(() => ui.flash.classList.remove('show'), 180); }
+function announce(text) { ui.message.textContent = text; ui.message.classList.add('show'); clearTimeout(announce.timer); announce.timer = setTimeout(() => ui.message.classList.remove('show'), 1100); }
+
+// ── 陀螺儀 ──
+const deviceEuler = new THREE.Euler(), deviceQuat = new THREE.Quaternion(), screenQuat = new THREE.Quaternion(), backCameraQuat = new THREE.Quaternion(-Math.sqrt(.5), 0, 0, Math.sqrt(.5)), zAxis = new THREE.Vector3(0, 0, 1), lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+function screenAngle() { return THREE.MathUtils.degToRad(screen.orientation?.angle ?? window.orientation ?? 0); }
+// 把手機的方向換算成「手機背面鏡頭朝向」的左右 (yaw) 與上下 (pitch)，直拿、橫拿都正確
+function deviceLook(alpha, beta, gamma, orient) { const d = THREE.MathUtils.degToRad; deviceEuler.set(d(beta), d(alpha), -d(gamma), 'YXZ'); deviceQuat.setFromEuler(deviceEuler).multiply(backCameraQuat).multiply(screenQuat.setFromAxisAngle(zAxis, -orient)); lookEuler.setFromQuaternion(deviceQuat, 'YXZ'); return { yaw: lookEuler.y, pitch: lookEuler.x }; }
+function handleOrientation(event) {
+  if (!state.running || event.alpha == null) return; const look = deviceLook(event.alpha, event.beta ?? 90, event.gamma ?? 0, screenAngle());
+  if (state.baseYaw == null) { state.baseYaw = look.yaw; state.basePitch = look.pitch; } // 開始時手機怎麼拿，就當作正前方
+  state.yaw = clamp(relativeAngle(look.yaw, state.baseYaw) * GYRO_SENSITIVITY, -MAX_AIM_YAW, MAX_AIM_YAW); state.pitch = clamp((look.pitch - state.basePitch) * GYRO_SENSITIVITY, MIN_AIM_PITCH, MAX_AIM_PITCH);
+}
+
+// ── 主迴圈 ──
+function updateGroans(dt) { state.groanTimer -= dt; if (state.groanTimer > 0) return; state.groanTimer = 2.5 + Math.random() * 3; const alive = state.enemies.filter(e => e.userData.alive && e.userData.freeze < 100); if (alive.length) sfx.groan(alive[Math.floor(Math.random() * alive.length)].userData.distance); }
+function loop() {
+  requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), .05), elapsed = clock.elapsedTime;
+  world?.update(performance.now() / 1000); setSpraying(state.running && state.spraying, state.boosts.water > 0);
+  if (state.running) {
+    camera.rotation.y = stepAim(camera.rotation.y, state.yaw, dt, AIM_SMOOTHING, AIM_MAX_SPEED); camera.rotation.x = stepAim(camera.rotation.x, state.pitch, dt, AIM_SMOOTHING, AIM_MAX_SPEED); camera.updateMatrixWorld();
+    tickBoosts(state.boosts, dt); updatePowerUpHud();
+    const enemy = targetEnemy(); if (state.spraying) sprayAt(enemy, dt); else { ui.crosshair.classList.toggle('locked', !!enemy); ui.meter.classList.remove('visible'); }
+    const enemyDt = dt * enemyTimeScale(state.boosts); for (const e of [...state.enemies]) { updateEnemy(e, enemyDt); if (!state.running) break; }
+    if (state.running) { updateItems(dt, elapsed); updateSpawning(dt); updateGroans(dt); watchPerformance(dt); }
+  }
+  updatePool(waterPool, dt); updatePool(shardPool, dt);
+  renderer.render(scene, camera);
+}
+function renderMute() { ui.mute.textContent = isMuted() ? '🔇' : '🔊'; ui.mute.setAttribute('aria-label', isMuted() ? '開啟音效' : '關閉音效'); }
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
-window.addEventListener('resize', resize); resize(); window.addEventListener('deviceorientation', handleOrientation, true); ui.modeButtons.forEach(button => button.addEventListener('click', () => startGame(button.dataset.mode)));
-canvas.addEventListener('pointerdown', e => { if (!state.running) return; state.spraying = true; state.dragging = true; state.dragX = e.clientX; state.dragY = e.clientY; canvas.setPointerCapture?.(e.pointerId); });
-canvas.addEventListener('pointermove', e => { if (!state.dragging || e.pointerType !== 'mouse') return; state.yaw -= (e.clientX - state.dragX) * .004; state.pitch = clamp(state.pitch - (e.clientY - state.dragY) * .003, -.62, .5); state.dragX = e.clientX; state.dragY = e.clientY; });
-window.addEventListener('pointerup', () => { state.spraying = false; state.dragging = false; }); window.addEventListener('pointercancel', () => { state.spraying = false; state.dragging = false; }); addEventListener('contextmenu', e => e.preventDefault()); loop();
+
+// ── 事件 ──
+window.addEventListener('resize', resize); resize();
+window.addEventListener('deviceorientation', handleOrientation, true); screen.orientation?.addEventListener?.('change', () => { state.baseYaw = null; });
+ui.mute.addEventListener('click', () => { initAudio(); toggleMute(); renderMute(); }); renderMute();
+canvas.addEventListener('pointerdown', e => { if (!state.running) return; e.preventDefault(); state.spraying = true; state.dragging = true; state.dragX = e.clientX; state.dragY = e.clientY; canvas.setPointerCapture?.(e.pointerId); });
+canvas.addEventListener('pointermove', e => { if (!state.dragging || e.pointerType !== 'mouse') return; state.yaw = clamp(state.yaw - (e.clientX - state.dragX) * .0018, -MAX_AIM_YAW, MAX_AIM_YAW); state.pitch = clamp(state.pitch - (e.clientY - state.dragY) * .0014, MIN_AIM_PITCH, MAX_AIM_PITCH); state.dragX = e.clientX; state.dragY = e.clientY; });
+window.addEventListener('pointerup', () => { state.spraying = false; state.dragging = false; }); window.addEventListener('pointercancel', () => { state.spraying = false; state.dragging = false; });
+// 擋掉連點兩下出現的「拷貝／翻譯」選單、長按選單與雙擊縮放
+for (const type of ['contextmenu', 'selectstart', 'dblclick', 'gesturestart']) document.addEventListener(type, e => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0; document.addEventListener('touchend', e => { const now = performance.now(); if (now - lastTouchEnd < 350 && !e.target.closest('button')) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
+document.addEventListener('selectionchange', () => { const sel = document.getSelection(); if (sel && !sel.isCollapsed) sel.removeAllRanges(); });
+
+function selectMode(mode) {
+  state.mode = mode; const child = mode === 'child'; ui.modeBadge.textContent = child ? '🌈 小孩版' : '🌙 成人版';
+  ui.modeButtons.forEach(button => button.classList.toggle('selected', button.dataset.mode === mode));
+  ui.text.textContent = child ? '可愛怪物速度較慢、傷害較低。選擇關卡開始冒險！' : '敵人更多、更快、傷害更高。選擇關卡接受挑戰！';
+  ui.start.hidden = false; ui.start.textContent = state.unlocked > 1 ? `繼續第 ${state.unlocked} 關` : '開始第 1 關'; ui.start.onclick = () => startLevel(state.unlocked - 1); renderLevelGrid();
+}
+ui.modeButtons.forEach(button => button.addEventListener('click', () => selectMode(button.dataset.mode)));
+state.level = state.unlocked - 1; useTheme(LEVELS[state.level].theme);
+showPanel('冰水特攻隊', '先選擇小孩版或成人版，再選關卡。兩種版本都能轉動手機瞄準、按住畫面噴水。', '', () => {});
+loop();

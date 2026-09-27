@@ -37,3 +37,37 @@ export function resolveContact(playerHealth, enemy, contactDistance = 1.35) {
   enemy.alive = false;
   return { health: clamp(playerHealth - enemy.damage, 0, 100), hit: true };
 }
+
+export const MAX_AIM_YAW = 75 * Math.PI / 180; // 左右各 75 度，總共 150 度
+
+export function stepAim(current, target, seconds, smoothing = 4, maxSpeed = 1.4) {
+  const step = (target - current) * Math.min(1, seconds * smoothing);
+  const limit = maxSpeed * seconds;
+  return current + clamp(step, -limit, limit);
+}
+
+export const MIN_AIM_PITCH = -.22; // 往下最多約 13 度
+export const MAX_AIM_PITCH = .2; // 往上最多約 11 度
+
+// 兩個角度的差，換算到 -π～π 之間
+export function relativeAngle(value, base) { let d = value - base; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
+
+export const POWER_UP_TYPES = ['water', 'bomb', 'heal', 'slow', 'shield', 'double', 'stop'];
+// 有持續時間的道具（秒）
+export const POWER_UP_SECONDS = { water: 8, slow: 8, shield: 10, double: 10, stop: 5 };
+export const emptyBoosts = () => Object.fromEntries(Object.keys(POWER_UP_SECONDS).map(k => [k, 0]));
+
+export function applyPowerUp(game, type, enemies = []) {
+  if (type === 'heal') game.health = clamp(game.health + 30, 0, 100);
+  else if (type === 'bomb') { for (const enemy of enemies) if (enemy.alive) enemy.freeze = clamp(enemy.freeze + 100, 0, 134); }
+  else if (type in POWER_UP_SECONDS) game.boosts[type] = POWER_UP_SECONDS[type];
+  return game;
+}
+
+// 殭屍實際移動的時間倍率：時間暫停 > 變慢 > 正常
+export function enemyTimeScale(boosts) { return boosts.stop > 0 ? 0 : boosts.slow > 0 ? .4 : 1; }
+
+export function tickBoosts(boosts, seconds) {
+  for (const key of Object.keys(boosts)) boosts[key] = Math.max(0, boosts[key] - seconds);
+  return boosts;
+}
