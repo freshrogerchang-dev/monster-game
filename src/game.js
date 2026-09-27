@@ -1,9 +1,9 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { buildScene } from './scene.js';
-import { createFirearm } from './weapon-model.js';
-import { WEAPONS, createLoadout, fireWeapon, hitWithBullet, reloadWeapon, switchWeapon, tickWeapon } from './weapons.js';
-import { animateZombie, createZombieModel, ZOMBIE_TYPES } from './zombie.js';
-import { initAudio, isMuted, setSpraying, sfx, toggleMute } from './audio.js';
+import { buildScene } from './scene.js?v=guns1';
+import { createFirearm } from './weapon-model.js?v=guns1';
+import { WEAPONS, createLoadout, fireWeapon, hitWithBullet, reloadWeapon, switchWeapon, tickWeapon } from './weapons.js?v=guns1';
+import { animateZombie, createZombieModel, ZOMBIE_TYPES } from './zombie.js?v=guns1';
+import { initAudio, isMuted, setSpraying, sfx, toggleMute } from './audio.js?v=guns1';
 import { LEVELS, MAX_ALIVE, loadProgress, saveProgress, waveTypes } from './levels.js';
 import { advanceEnemy, applyModeStats, applyPowerUp, applyWater, clamp, emptyBoosts, enemyTimeScale, MODE_RULES, MAX_AIM_PITCH, MAX_AIM_YAW, MIN_AIM_PITCH, POWER_UP_TYPES, relativeAngle, resolveContact, stepAim, tickBoosts } from './mechanics.js';
 

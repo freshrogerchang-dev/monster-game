@@ -1,5 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { addRuins } from './ruins.js';
+import { addRuins } from './ruins.js?v=guns1';
 
 // 六個關卡場景。buildScene(scene, theme, lights) 回傳 { update(elapsed), dispose() }
 // 效能：不會動的物件在建好後依材質合併成少數幾個網格（大幅減少繪製次數），燈泡用 InstancedMesh

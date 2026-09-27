@@ -1,5 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { surface } from './surface.js';
+import { surface } from './surface.js?v=guns1';
 
 // 可愛 Q 版殭屍：大頭、大眼、腮紅，三種造型共用幾何體以節省效能
 export const ZOMBIE_TYPES = {
