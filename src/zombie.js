@@ -51,7 +51,7 @@ const shared = {
 
 function mesh(geometry, material, x = 0, y = 0, z = 0, parent) { const m = new THREE.Mesh(geometry, material); m.position.set(x, y, z); parent?.add(m); return m; }
 
-export function createZombieModel(type = 'normal') {
+function createChildZombieModel(type = 'normal') {
   const cfg = ZOMBIE_TYPES[type];
   const skin = new THREE.MeshStandardMaterial({ color: cfg.skin, roughness: .65 }), cloth = new THREE.MeshStandardMaterial({ color: cfg.cloth, roughness: .75 }), pants = new THREE.MeshStandardMaterial({ color: cfg.pants, roughness: .8 });
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
@@ -92,6 +92,95 @@ export function createZombieModel(type = 'normal') {
   const hitbox = mesh(geo.hitbox, shared.hitbox, 0, 1.15, 0, root); hitbox.userData.enemyRoot = root;
   root.scale.setScalar(cfg.scale);
   return { root, hitbox, body, head, limbs, parts: [skin, cloth, pants], baseColors: [skin.color.clone(), cloth.color.clone(), pants.color.clone()] };
+}
+
+const realisticGeo = {
+  head: new THREE.SphereGeometry(.235, 24, 18),
+  jaw: new THREE.BoxGeometry(.28, .16, .22),
+  torso: new THREE.CylinderGeometry(.26, .20, .72, 10),
+  shoulder: new THREE.BoxGeometry(.68, .16, .28),
+  arm: new THREE.CapsuleGeometry(.07, .42, 5, 9),
+  forearm: new THREE.CapsuleGeometry(.065, .37, 5, 9),
+  leg: new THREE.CapsuleGeometry(.095, .48, 5, 10),
+  shin: new THREE.CapsuleGeometry(.085, .43, 5, 10),
+  hand: new THREE.BoxGeometry(.13, .18, .08),
+  boot: new THREE.BoxGeometry(.19, .14, .34),
+  eye: new THREE.SphereGeometry(.035, 10, 8),
+  socket: new THREE.SphereGeometry(.07, 10, 8),
+  tooth: new THREE.BoxGeometry(.035, .055, .025),
+  wound: new THREE.CircleGeometry(.09, 14),
+  hitbox: new THREE.CylinderGeometry(.38, .38, 2.25, 8)
+};
+
+const adultShared = {
+  socket: new THREE.MeshStandardMaterial({ color: 0x17191a, roughness: 1 }),
+  eye: new THREE.MeshStandardMaterial({ color: 0xd9c9ae, emissive: 0x6b120e, emissiveIntensity: .65, roughness: .45 }),
+  mouth: new THREE.MeshStandardMaterial({ color: 0x241314, roughness: 1 }),
+  teeth: new THREE.MeshStandardMaterial({ color: 0xc6b99b, roughness: .85 }),
+  wound: new THREE.MeshStandardMaterial({ color: 0x4d1716, roughness: .9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
+  boot: new THREE.MeshStandardMaterial({ color: 0x17191a, roughness: .92 }),
+  hitbox: new THREE.MeshBasicMaterial({ visible: false })
+};
+
+const ADULT_PALETTE = {
+  normal: { skin: 0x7d8278, cloth: 0x38434a, pants: 0x252b2d },
+  fast: { skin: 0x858779, cloth: 0x51473d, pants: 0x20282b },
+  tank: { skin: 0x6d756d, cloth: 0x33383a, pants: 0x202326 },
+  boss: { skin: 0x77716d, cloth: 0x342d2d, pants: 0x1d2021 }
+};
+
+function createRealisticZombieModel(type) {
+  const cfg = ZOMBIE_TYPES[type], palette = ADULT_PALETTE[type];
+  const skin = new THREE.MeshStandardMaterial({ color: palette.skin, roughness: .96, metalness: 0 });
+  const cloth = new THREE.MeshStandardMaterial({ color: palette.cloth, roughness: 1 });
+  const pants = new THREE.MeshStandardMaterial({ color: palette.pants, roughness: .94 });
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  body.rotation.x = type === 'fast' ? .18 : .10;
+
+  const torso = mesh(realisticGeo.torso, cloth, 0, 1.28, 0, body); torso.castShadow = true;
+  torso.scale.set(type === 'tank' || type === 'boss' ? 1.35 : type === 'fast' ? .82 : 1, 1, type === 'tank' ? 1.25 : 1);
+  mesh(realisticGeo.shoulder, cloth, 0, 1.55, 0, body).scale.x = type === 'tank' || type === 'boss' ? 1.25 : 1;
+  const wound = mesh(realisticGeo.wound, adultShared.wound, type === 'tank' ? -.08 : .11, 1.34, .267, body); wound.rotation.z = -.35;
+
+  const limbs = [], arms = [], legs = [];
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Group(); arm.position.set(side * (type === 'tank' ? .43 : .35), 1.52, 0); body.add(arm);
+    mesh(realisticGeo.arm, skin, 0, -.25, 0, arm);
+    const elbow = new THREE.Group(); elbow.position.set(0, -.48, 0); elbow.rotation.x = -.22; arm.add(elbow);
+    mesh(realisticGeo.forearm, skin, 0, -.22, 0, elbow); mesh(realisticGeo.hand, skin, 0, -.47, -.015, elbow);
+    arm.rotation.z = side * (type === 'tank' ? -.1 : -.03); arms.push(arm);
+  }
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(side * .14, .94, 0); body.add(leg);
+    mesh(realisticGeo.leg, pants, 0, -.30, 0, leg);
+    const knee = new THREE.Group(); knee.position.set(0, -.58, 0); leg.add(knee);
+    mesh(realisticGeo.shin, pants, 0, -.27, 0, knee); mesh(realisticGeo.boot, adultShared.boot, 0, -.55, .09, knee);
+    legs.push(leg);
+  }
+  limbs.push(...arms, ...legs);
+
+  const head = new THREE.Group(); head.position.set(type === 'fast' ? .04 : 0, 1.91, .035); head.rotation.z = type === 'normal' ? -.12 : type === 'boss' ? .08 : 0; body.add(head);
+  const skull = mesh(realisticGeo.head, skin, 0, 0, 0, head); skull.scale.set(type === 'tank' ? 1.08 : .96, 1.16, .92); skull.castShadow = true;
+  const jaw = mesh(realisticGeo.jaw, skin, .025, -.20, .035, head); jaw.rotation.x = type === 'fast' ? .28 : .12;
+  for (const side of [-1, 1]) {
+    mesh(realisticGeo.socket, adultShared.socket, side * .09, .035, .195, head).scale.set(1.25, .72, .45);
+    const eye = mesh(realisticGeo.eye, adultShared.eye, side * .09, .035, .232, head); eye.scale.set(type === 'boss' ? 1.25 : .8, .7, .45);
+  }
+  const mouth = mesh(new THREE.BoxGeometry(.18, .045, .018), adultShared.mouth, .025, -.205, .158, head); mouth.rotation.x = -.14;
+  for (const x of [-.055, 0, .055]) mesh(realisticGeo.tooth, adultShared.teeth, x + .025, -.19, .174, head).rotation.z = x * 2;
+
+  if (type === 'boss') {
+    for (const side of [-1, 1]) { const scar = mesh(new THREE.BoxGeometry(.018, .22, .014), adultShared.wound, side * .11, .02, .218, head); scar.rotation.z = side * .25; }
+  }
+  if (type === 'tank') mesh(new THREE.BoxGeometry(.76, .09, .31), adultShared.boot, 0, 1.63, -.01, body).rotation.z = .04;
+
+  const hitbox = mesh(realisticGeo.hitbox, adultShared.hitbox, 0, 1.08, 0, root); hitbox.userData.enemyRoot = root;
+  root.scale.setScalar(cfg.scale);
+  return { root, hitbox, body, head, limbs, parts: [skin, cloth, pants], baseColors: [skin.color.clone(), cloth.color.clone(), pants.color.clone()] };
+}
+
+export function createZombieModel(type = 'normal', mode = 'child') {
+  return mode === 'adult' ? createRealisticZombieModel(type) : createChildZombieModel(type);
 }
 
 const iceColor = new THREE.Color(0xa8f1ff);

@@ -325,6 +325,84 @@ function birds(k, count, color, height, bat = false) {
   k.animated.push(t => list.forEach(o => { const a = t * o.sp + o.p; o.b.position.set(o.cx + Math.cos(a) * o.r, o.h + Math.sin(t * 1.3 + o.p) * .6, o.cz + Math.sin(a) * o.r); o.b.rotation.y = -a + (o.sp > 0 ? 0 : Math.PI); const flap = Math.sin(t * (bat ? 14 : 6) + o.p) * .7; o.wings[0].rotation.z = flap; o.wings[1].rotation.z = -flap; }));
 }
 
+const ADULT_SCENES = {
+  carnival: { sky: ['#06080b', '#182027', '#29231f'], fog: 0x14191c, accent: 0x8c3b2d, ground: '#171a1b', label: 'ABANDONED MIDWAY' },
+  candy: { sky: ['#080b0d', '#1b2223', '#32302b'], fog: 0x1a2020, accent: 0x80613c, ground: '#1a1d1c', label: 'PROCESSING PLANT' },
+  snow: { sky: ['#111821', '#34414c', '#68717a'], fog: 0x66717a, accent: 0x46545d, ground: '#7b858b', label: 'QUARANTINE ZONE' },
+  beach: { sky: ['#080e12', '#26333a', '#5c5148'], fog: 0x354047, accent: 0x6b4f39, ground: '#292b29', label: 'EVACUATION COAST' },
+  graveyard: { sky: ['#050709', '#151b1d', '#282923'], fog: 0x111718, accent: 0x45483e, ground: '#171a17', label: 'MEMORIAL DISTRICT' },
+  moon: { sky: ['#020305', '#090d14', '#18202c'], fog: 0x080c12, accent: 0x4c5968, ground: '#24292d', label: 'LUNAR OUTPOST' }
+};
+
+function grungeTexture(base, repeat = [10, 18], cracks = true) {
+  return canvasTexture(256, (g, s) => {
+    g.fillStyle = base; g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 1900; i++) { const a = rand(.025, .16); g.fillStyle = `rgba(${Math.random() < .55 ? '0,0,0' : '255,255,255'},${a})`; const n = rand(.4, 2.8); g.fillRect(rand(0, s), rand(0, s), n, n); }
+    if (!cracks) return;
+    g.strokeStyle = 'rgba(4,5,5,.48)'; g.lineWidth = 1.4;
+    for (let i = 0; i < 16; i++) { let x = rand(0, s), y = rand(0, s); g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 5; j++) { x += rand(-14, 14); y += rand(7, 23); g.lineTo(x, y); } g.stroke(); }
+  }, repeat);
+}
+
+function adultEnvironment(k, theme) {
+  const cfg = ADULT_SCENES[theme];
+  k.sky([[cfg.sky[0], 0], [cfg.sky[1], .52], [cfg.sky[2], 1]], { stars: theme === 'moon' ? 850 : 0, starSize: .18 });
+  const groundTex = grungeTexture(cfg.ground, [12, 26], theme !== 'snow');
+  const pathTex = grungeTexture(theme === 'snow' ? '#69737a' : '#202325', [3, 28]);
+  k.ground(groundTex, pathTex, theme === 'moon' ? 0x3f4850 : 0x343738);
+
+  const concrete = std(0x3d4140, { map: grungeTexture('#525755', [3, 3]), roughness: 1 });
+  const darkConcrete = std(0x232728, { roughness: .98 });
+  const rust = std(0x583a2b, { map: grungeTexture('#654333', [2, 3]), metalness: .34, roughness: .88 });
+  const metal = std(0x4a5051, { metalness: .58, roughness: .72 });
+  const glass = std(0x10191b, { metalness: .15, roughness: .34, emissive: 0x071011, emissiveIntensity: .3 });
+  const warning = std(cfg.accent, { roughness: .82 });
+
+  // Derelict structures create a narrow first-person street with realistic scale and depth.
+  for (const side of [-1, 1]) for (let i = 0; i < 7; i++) {
+    const z = -7 - i * 12 + rand(-1.4, 1.4), width = rand(7, 11), height = rand(6, 13), depth = rand(5, 8);
+    const building = k.group(side * rand(11, 14), 0, z); building.rotation.y = side * rand(-.05, .05);
+    const wall = k.mesh(new THREE.BoxGeometry(depth, height, width), i % 3 ? concrete : darkConcrete, 0, height / 2, 0, building); wall.castShadow = wall.receiveShadow = true;
+    for (let floor = 1.7; floor < height - .8; floor += 2.25) for (const wz of [-width * .27, width * .27]) {
+      const win = k.mesh(new THREE.PlaneGeometry(1.15, 1.25), glass, -side * (depth / 2 + .006), floor, wz, building); win.rotation.y = side * Math.PI / 2;
+      if ((i + Math.round(floor) + (wz > 0 ? 1 : 0)) % 4 === 0) win.material = darkConcrete;
+    }
+    if (i % 2 === 0) { const pipe = k.mesh(new THREE.CylinderGeometry(.11, .14, height * .75, 8), rust, -side * (depth / 2 + .18), height * .42, width * .35, building); pipe.rotation.z = .015; }
+  }
+
+  // Bent street lamps, barricades, debris and road markings sell the abandoned setting.
+  const lamps = [];
+  for (let i = 0; i < 8; i++) {
+    const side = i % 2 ? -1 : 1, z = -5 - i * 10, lamp = k.dynamic(k.group(side * 6.25, 0, z)); lamp.rotation.z = side * rand(-.03, .08);
+    k.mesh(new THREE.CylinderGeometry(.055, .09, 4.6, 8), metal, 0, 2.3, 0, lamp);
+    const arm = k.mesh(new THREE.BoxGeometry(1.15, .09, .09), metal, -side * .5, 4.55, 0, lamp); arm.rotation.z = side * -.08;
+    const bulb = k.mesh(new THREE.SphereGeometry(.12, 10, 8), glow(0xd7d0b0, { transparent: true, opacity: .82 }), -side * 1.02, 4.38, 0, lamp); lamps.push({ bulb, phase: rand(0, 8), dead: i % 3 === 0 });
+  }
+  k.animated.push(t => lamps.forEach(o => { o.bulb.material.opacity = o.dead ? .05 : (Math.sin(t * 17 + o.phase) > -.82 ? .72 : .16); }));
+  for (let i = 0; i < 16; i++) {
+    const side = i % 2 ? -1 : 1, z = rand(-78, -3), item = k.group(side * rand(6.9, 9.6), 0, z); item.rotation.y = rand(-1.1, 1.1);
+    if (i % 3 === 0) { k.mesh(new THREE.BoxGeometry(1.5, .75, .65), rust, 0, .38, 0, item); k.mesh(new THREE.BoxGeometry(1.6, .08, .74), metal, 0, .8, 0, item); }
+    else { const slab = k.mesh(new THREE.BoxGeometry(rand(.7, 1.8), rand(.12, .3), rand(.45, 1.2)), i % 2 ? concrete : rust, 0, rand(.08, .18), 0, item); slab.rotation.set(rand(-.2, .2), rand(-.5, .5), rand(-.12, .12)); }
+  }
+  for (let z = -12; z > -80; z -= 16) for (const side of [-1, 1]) { const barrier = k.group(side * 5.1, 0, z); barrier.rotation.y = side * rand(-.18, .18); k.mesh(new THREE.BoxGeometry(2.3, .22, .18), warning, 0, .72, 0, barrier).rotation.z = side * .06; for (const x of [-.9, .9]) k.mesh(new THREE.BoxGeometry(.13, 1.15, .13), metal, x, .42, 0, barrier); }
+
+  // Each stage keeps its gameplay identity while staying grounded in a realistic location.
+  if (theme === 'carnival') {
+    const wheel = k.group(11, 8, -58); wheel.rotation.y = -.25; k.mesh(new THREE.TorusGeometry(7.5, .16, 8, 48), rust, 0, 0, 0, wheel); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; const spoke = k.mesh(new THREE.BoxGeometry(.1, 7.4, .1), metal, 0, 0, 0, wheel); spoke.rotation.z = a; k.mesh(new THREE.BoxGeometry(1.15, .7, .7), darkConcrete, Math.sin(a) * 7.5, Math.cos(a) * 7.5, 0, wheel); }
+  } else if (theme === 'graveyard') {
+    for (let i = 0; i < 24; i++) { const [x, z] = k.side(7.5, 14, -78, -4), stone = k.group(x, 0, z); stone.rotation.y = rand(-.35, .35); const h = rand(.8, 1.7); k.mesh(new THREE.BoxGeometry(rand(.45, .75), h, .24), concrete, 0, h / 2, 0, stone); if (i % 4 === 0) k.mesh(new THREE.BoxGeometry(.9, .18, .22), concrete, 0, h * .75, 0, stone); }
+  } else if (theme === 'moon') {
+    for (const side of [-1, 1]) { const dome = k.mesh(new THREE.SphereGeometry(4.3, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), metal, side * 11, 0, -38); dome.scale.y = .65; }
+  } else if (theme === 'snow') {
+    k.floaters(700, 0xdbe5ea, [-20, 20, .3, 18, -80, 5], .055, .22);
+  } else if (theme === 'beach') {
+    const water = k.mesh(new THREE.PlaneGeometry(55, 120), std(0x1a3036, { metalness: .25, roughness: .38 }), -30, -.05, -38); water.rotation.x = -Math.PI / 2;
+  } else {
+    for (const side of [-1, 1]) for (let i = 0; i < 4; i++) { const tank = k.mesh(new THREE.CylinderGeometry(2.1, 2.1, 4.8, 18), metal, side * 11.5, 2.4, -14 - i * 18); tank.rotation.z = i === 3 ? side * .16 : 0; }
+  }
+  if (theme !== 'snow') k.floaters(theme === 'moon' ? 180 : 95, theme === 'moon' ? 0x9da4aa : 0x484a47, [-18, 18, .3, 12, -82, 4], .045, .12);
+}
+
 // 每個場景的天色與燈光
 export const THEME_LIGHTING = {
   carnival: { fog: [0x1a2240, .018], hemi: [0x9fb8ff, 0x2a2a3a, 2.1], sun: [0xb9eaff, 3.4] },
@@ -334,12 +412,20 @@ export const THEME_LIGHTING = {
   graveyard: { fog: [0x2a1840, .028], hemi: [0x9a7fd0, 0x201830, 1.7], sun: [0xc0a0ff, 2.2] },
   moon: { fog: [0x05060f, .006], hemi: [0xb0c0ff, 0x303040, 1.8], sun: [0xffffff, 3.4] }
 };
+const ADULT_LIGHTING = {
+  carnival: { fog: [0x1a2024, .024], hemi: [0x718493, 0x181b1d, 1.05], sun: [0xc5b59e, 1.65] },
+  candy: { fog: [0x202727, .023], hemi: [0x78827d, 0x1b1d1b, 1.08], sun: [0xc4b89e, 1.55] },
+  snow: { fog: [0x66717a, .032], hemi: [0x9caab4, 0x343a3e, 1.05], sun: [0xd4d9d8, 1.35] },
+  beach: { fog: [0x354047, .024], hemi: [0x78868c, 0x202628, .9], sun: [0xb39a7e, 1.45] },
+  graveyard: { fog: [0x161d1e, .032], hemi: [0x5d7070, 0x101414, .88], sun: [0x9ba7a2, 1.22] },
+  moon: { fog: [0x080c12, .012], hemi: [0x5e6c83, 0x080a0e, .62], sun: [0xaebbd0, 1.4] }
+};
 const BUILDERS = { carnival, candy, snow, beach, graveyard, moon };
 
-export function buildScene(scene, theme, lights) {
+export function buildScene(scene, theme, lights, mode = 'child') {
   const root = new THREE.Group(); scene.add(root);
-  const kit = makeKit(root); BUILDERS[theme](kit); bakeStatic(root);
-  const cfg = THEME_LIGHTING[theme];
+  const kit = makeKit(root); if (mode === 'adult') adultEnvironment(kit, theme); else BUILDERS[theme](kit); bakeStatic(root);
+  const cfg = mode === 'adult' ? ADULT_LIGHTING[theme] : THEME_LIGHTING[theme];
   scene.fog.color.setHex(cfg.fog[0]); scene.fog.density = cfg.fog[1]; scene.background.setHex(cfg.fog[0]);
   lights.hemi.color.setHex(cfg.hemi[0]); lights.hemi.groundColor.setHex(cfg.hemi[1]); lights.hemi.intensity = cfg.hemi[2];
   lights.sun.color.setHex(cfg.sun[0]); lights.sun.intensity = cfg.sun[1];

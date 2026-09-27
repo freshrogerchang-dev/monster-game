@@ -44,7 +44,7 @@ scene.add(lights.hemi, lights.sun);
 const state = { running: false, spraying: false, mode: null, health: 100, score: 0, levelScore: 0, level: 0, wave: 0, queue: [], spawnTimer: 0, waveTimer: 0, enemies: [], items: [], itemTimer: 0, boosts: emptyBoosts(), yaw: 0, pitch: 0, baseYaw: null, basePitch: null, dragX: 0, dragY: 0, dragging: false, groanTimer: 3, unlocked: loadProgress(localStorage) };
 const raycaster = new THREE.Raycaster(), center = new THREE.Vector2(0, 0), clock = new THREE.Clock(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3();
 let world = null, worldTheme = null;
-function useTheme(theme) { if (worldTheme === theme) return; world?.dispose(); world = buildScene(scene, theme, lights); worldTheme = theme; }
+function useTheme(theme) { const key = `${state.mode || 'child'}:${theme}`; if (worldTheme === key) return; world?.dispose(); world = buildScene(scene, theme, lights, state.mode || 'child'); worldTheme = key; }
 
 function createBlaster() {
   const gun = new THREE.Group(), blue = new THREE.MeshStandardMaterial({ color: 0x21bfd5, roughness: .35, metalness: .15 }), yellow = new THREE.MeshStandardMaterial({ color: 0xffd849, roughness: .45 });
@@ -72,7 +72,7 @@ function updatePool(pool, dt) {
 
 // ── 殭屍 ──
 function createZombie(type = 'normal') {
-  const cfg = ZOMBIE_TYPES[type], tuned = applyModeStats({ speed: cfg.speed, damage: cfg.damage, freezeRate: cfg.rate }, state.mode), model = createZombieModel(type), group = model.root; group.userData.enemyRoot = group;
+  const cfg = ZOMBIE_TYPES[type], tuned = applyModeStats({ speed: cfg.speed, damage: cfg.damage, freezeRate: cfg.rate }, state.mode), model = createZombieModel(type, state.mode), group = model.root; group.userData.enemyRoot = group;
   const boss = type === 'boss', distance = boss ? 32 : 18 + Math.random() * 18, angle = boss ? 0 : (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, 0, camera.position.z - Math.cos(angle) * distance);
   Object.assign(group.userData, { type, alive: true, freeze: 0, freezeRate: tuned.freezeRate, speed: tuned.speed, damage: tuned.damage, distance, points: cfg.points, phase: Math.random() * 6, animTime: 0, contact: 1.35 + (cfg.scale - 1) * .9, hitbox: model.hitbox, body: model.body, head: model.head, limbs: model.limbs, parts: model.parts, baseColors: model.baseColors });
   scene.add(group); state.enemies.push(group);
@@ -154,7 +154,7 @@ async function startLevel(index, keepScore = false) {
   if (starting || !state.mode) return; starting = true; // 連點兩下只開始一次
   initAudio(); sfx.start();
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') announce('未允許感測器，可用手指拖曳視角'); } catch { announce('可用手指拖曳視角'); } }
-  clearField(); useTheme(LEVELS[index].theme); renderer.toneMappingExposure = state.mode === 'child' ? 1.35 : .82; document.body.dataset.mode = state.mode;
+  clearField(); useTheme(LEVELS[index].theme); renderer.toneMappingExposure = state.mode === 'child' ? 1.35 : 1.08; document.body.dataset.mode = state.mode;
   Object.assign(state, { running: true, spraying: false, health: 100, score: keepScore ? state.score : 0, levelScore: 0, level: index, wave: 0, queue: [], waveTimer: 0, itemTimer: 5, boosts: emptyBoosts(), baseYaw: null, basePitch: null, groanTimer: 3, yaw: 0, pitch: 0 });
   camera.rotation.set(0, 0, 0); ui.panel.classList.add('hidden'); ui.levelInfo.classList.add('visible'); updateHud(); startWave(); clock.start(); starting = false;
 }
