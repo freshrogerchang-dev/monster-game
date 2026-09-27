@@ -1,5 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
 import { buildScene } from './scene.js';
+import { createFirearm } from './weapon-model.js';
+import { WEAPONS, createLoadout, fireWeapon, hitWithBullet, reloadWeapon, switchWeapon, tickWeapon } from './weapons.js';
 import { animateZombie, createZombieModel, ZOMBIE_TYPES } from './zombie.js';
 import { initAudio, isMuted, setSpraying, sfx, toggleMute } from './audio.js';
 import { LEVELS, MAX_ALIVE, loadProgress, saveProgress, waveTypes } from './levels.js';
@@ -16,6 +18,8 @@ const POWER_UPS = {
   stop: { label: '時間暫停', icon: '⏰', color: 0xa0ffb0 }
 };
 const TIMED = ['water', 'slow', 'shield', 'double', 'stop'];
+const ADULT_LEVEL_NAMES=['荒廢遊樂園','廢棄加工廠','暴雪隔離區','撤離海岸','荒廢墓園','月球前哨'];
+function levelName(index){return state.mode==='adult'?ADULT_LEVEL_NAMES[index]:LEVELS[index].name;}
 
 const $ = s => document.querySelector(s);
 const canvas = $('#game');
@@ -54,6 +58,31 @@ function createBlaster() {
   gun.position.set(.42, -.5, -1.05); gun.rotation.set(-.06, -.06, 0); camera.add(gun); return { gun, flower };
 }
 const blaster = createBlaster();
+const firearm = createFirearm(camera);
+let loadout = createLoadout(), iceCooldown = 0;
+const adultControls = document.createElement('div'); adultControls.id = 'adultControls'; adultControls.hidden = true;
+adultControls.innerHTML = '<div class="ammo-readout"><small id="weaponName"></small><strong id="ammoCount"></strong><span id="reloadState"></span></div><div class="combat-buttons"><button id="weaponSwitch" aria-label="切換步槍與狙擊槍">切換槍械</button><button id="scopeButton" aria-label="開鏡" aria-pressed="false">⊕ 開鏡</button><button id="reloadButton">換彈</button><button id="iceButton">❄ 冰爆</button><button id="fireButton" aria-label="按住射擊">射擊</button></div>';
+ui.shell.append(adultControls);
+const scopeOverlay = document.createElement('div'); scopeOverlay.id='scopeOverlay'; scopeOverlay.hidden=true; scopeOverlay.innerHTML='<div class="scope-ring"><i></i><b></b><span>CRYO OPTICS · 4×</span></div>'; ui.shell.append(scopeOverlay);
+function renderWeapons() {
+  const adult = state.mode==='adult' && state.running, cfg=WEAPONS[loadout.selected];
+  adultControls.hidden=!adult; blaster.gun.visible=state.mode!=='adult';
+  scopeOverlay.hidden=!(adult && loadout.scoped); ui.shell.classList.toggle('scoped', adult && loadout.scoped);
+  $('#weaponName').textContent=cfg.name+' / 冰凍彈'; $('#ammoCount').textContent=`${loadout.ammo[loadout.selected]} / ${cfg.capacity}`;
+  $('#reloadState').textContent=loadout.reloadLeft>0 ? `裝填中 ${loadout.reloadLeft.toFixed(1)}s` : '備彈 ∞';
+  $('#scopeButton').setAttribute('aria-pressed',String(loadout.scoped)); $('#scopeButton').textContent=loadout.scoped?'⊕ 收鏡':'⊕ 開鏡';
+  $('#iceButton').disabled=iceCooldown>0; $('#iceButton').textContent=iceCooldown>0?`❄ ${Math.ceil(iceCooldown)}s`:'❄ 冰爆';
+  const fov=adult && loadout.scoped ? cfg.zoom : 72; if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+}
+function reloadGun() { if(state.running && reloadWeapon(loadout)) {sfx.reload();renderWeapons();} }
+$('#weaponSwitch').onclick=()=>{if(!state.running)return; switchWeapon(loadout);state.spraying=false;renderWeapons();};
+$('#scopeButton').onclick=()=>{if(!state.running || loadout.reloadLeft>0)return;loadout.scoped=!loadout.scoped;renderWeapons();};
+$('#reloadButton').onclick=reloadGun;
+$('#iceButton').onclick=()=>{if(!state.running || iceCooldown>0)return;iceCooldown=18;applyPowerUp(state,'bomb',state.enemies.map(e=>e.userData));sfx.freeze();announce('冰凍衝擊');};
+$('#fireButton').addEventListener('pointerdown',e=>{if(!state.running)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);state.spraying=true;sprayAt(targetEnemy(),0);renderWeapons();});
+document.addEventListener('keydown',e=>{if(!state.running||state.mode!=='adult'||e.repeat)return;if(e.code==='KeyR')reloadGun();if(e.code==='KeyQ')$('#weaponSwitch').click();if(e.code==='KeyE')$('#scopeButton').click();if(e.code==='Space'){e.preventDefault();state.spraying=true;}});
+document.addEventListener('keyup',e=>{if(e.code==='Space')state.spraying=false;});
+window.addEventListener('blur',()=>{state.spraying=false;state.dragging=false;});
 
 // ── 粒子池：水滴與冰塊碎片都用 InstancedMesh，不再每幀新建幾何體與材質 ──
 function createPool(geometry, material, size) {
@@ -73,12 +102,13 @@ function updatePool(pool, dt) {
 // ── 殭屍 ──
 function createZombie(type = 'normal') {
   const cfg = ZOMBIE_TYPES[type], tuned = applyModeStats({ speed: cfg.speed, damage: cfg.damage, freezeRate: cfg.rate }, state.mode), model = createZombieModel(type, state.mode), group = model.root; group.userData.enemyRoot = group;
-  const boss = type === 'boss', distance = boss ? 32 : 18 + Math.random() * 18, angle = boss ? 0 : (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, 0, camera.position.z - Math.cos(angle) * distance);
+  const boss = type === 'boss', distance = boss ? 32 : 18 + Math.random() * 18, angle = boss ? 0 : (Math.random() - .5) * 1.25; group.position.set(Math.sin(angle) * distance, state.mode==='adult' ? .2*cfg.scale : 0, camera.position.z - Math.cos(angle) * distance);
   Object.assign(group.userData, { type, alive: true, freeze: 0, freezeRate: tuned.freezeRate, speed: tuned.speed, damage: tuned.damage, distance, points: cfg.points, phase: Math.random() * 6, animTime: 0, contact: 1.35 + (cfg.scale - 1) * .9, hitbox: model.hitbox, body: model.body, head: model.head, limbs: model.limbs, parts: model.parts, baseColors: model.baseColors });
   scene.add(group); state.enemies.push(group);
+  group.userData.hp = {normal:100,fast:75,tank:260,boss:1600}[type];
   if (boss) { announce('大魔王出現了！'); sfx.boss(); }
 }
-function removeEnemy(enemy) { scene.remove(enemy); enemy.userData.parts.forEach(m => m.dispose()); state.enemies = state.enemies.filter(e => e !== enemy); }
+function removeEnemy(enemy) { scene.remove(enemy); enemy.userData.parts.forEach(m => m.dispose()); enemy.userData.ownedGeometries?.forEach(g=>g.dispose()); state.enemies = state.enemies.filter(e => e !== enemy); }
 function updateEnemy(enemy, dt) {
   const data = enemy.userData; if (!data.alive) return;
   tmp.set(camera.position.x - enemy.position.x, 0, camera.position.z - enemy.position.z); data.distance = tmp.length(); advanceEnemy(data, dt);
@@ -91,10 +121,22 @@ function updateEnemy(enemy, dt) {
 }
 
 // ── 瞄準：只對每隻殭屍的隱形碰撞體做射線判定 ──
-function aimOffsets() { const spread = state.boosts.water > 0 ? .2 : .13, aspect = camera.aspect; const offsets = [[0, 0]]; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; offsets.push([Math.cos(a) * spread / aspect, Math.sin(a) * spread]); } return offsets; }
+function aimOffsets() { const spread = state.mode==='adult' ? (loadout.scoped ? .012 : .035) : state.boosts.water > 0 ? .2 : .13, aspect = camera.aspect; const offsets = [[0, 0]]; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; offsets.push([Math.cos(a) * spread / aspect, Math.sin(a) * spread]); } return offsets; }
 function castAim(objects, recursive) { if (!objects.length) return null; let best = null; for (const [x, y] of aimOffsets()) { center.set(x, y); raycaster.setFromCamera(center, camera); const hit = raycaster.intersectObjects(objects, recursive)[0]; if (hit && (!best || hit.distance < best.distance)) best = hit; if (best && x === 0 && y === 0) break; } center.set(0, 0); return best; }
 function targetEnemy() { const hit = castAim(state.enemies.filter(e => e.userData.alive).map(e => e.userData.hitbox), false); return hit ? hit.object.userData.enemyRoot : null; }
 function sprayAt(enemy, dt) {
+  if(state.mode==='adult') {
+    if(!fireWeapon(loadout)) return;
+    firearm.shot(loadout.selected);sfx.gunshot(loadout.selected==='sniper');collectAimedItem();
+    if(enemy) {
+      const dead=hitWithBullet(enemy.userData,loadout.selected,state.boosts.water>0?1.7:1);
+      ui.crosshair.classList.add('locked');ui.meter.classList.add('visible');ui.meterFill.style.width=`${enemy.userData.freeze}%`;
+      tmp.copy(enemy.position);tmp.y=1.5*ZOMBIE_TYPES[enemy.userData.type].scale;
+      for(let i=0;i<9;i++)emit(shardPool,tmp,tmp2.set((Math.random()-.5)*3,Math.random()*3,(Math.random()-.5)*3),.45,.04+Math.random()*.08,3);
+      if(dead)shatter(enemy);
+    }
+    return;
+  }
   blaster.gun.position.y = -.5 + Math.sin(performance.now() * .035) * .012; blaster.flower.rotation.z += dt * 13;
   const big = state.boosts.water > 0 ? 1.5 : 1; tmp3.set(.42, -.5, -1.95).applyMatrix4(camera.matrixWorld);
   for (let i = 0; i < (big > 1 ? 4 : 3); i++) emit(waterPool, tmp3, tmp2.set((Math.random() - .5) * .09 * big, (Math.random() - .5) * .09 * big, -1).normalize().applyQuaternion(camera.quaternion).multiplyScalar(18 + Math.random() * 6), .55, (.12 + Math.random() * .1) * big);
@@ -139,7 +181,7 @@ function updatePowerUpHud() {
 }
 
 // ── 關卡流程 ──
-function levelLabel() { const lv = LEVELS[state.level]; return `第 ${state.level + 1} 關 ${lv.name}・第 ${state.wave + 1}/${lv.waves.length} 波`; }
+function levelLabel() { const lv = LEVELS[state.level]; return `第 ${state.level + 1} 關 ${levelName(state.level)}・第 ${state.wave + 1}/${lv.waves.length} 波`; }
 function startWave() { const source = waveTypes(state.level, state.wave); state.queue = state.mode === 'adult' ? [...source, ...source.slice(0, Math.ceil(source.length * .35))] : source.slice(0, Math.max(1, Math.ceil(source.length * .72))); state.spawnTimer = .3; ui.levelInfo.textContent = levelLabel(); announce(state.mode === 'child' ? `第 ${state.wave + 1} 波怪物來囉！` : state.wave === LEVELS[state.level].waves.length - 1 ? '最後一波逼近！' : `第 ${state.wave + 1} 波逼近`); sfx.wave(); }
 function updateSpawning(dt) {
   const alive = state.enemies.filter(e => e.userData.alive).length;
@@ -156,20 +198,21 @@ async function startLevel(index, keepScore = false) {
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') announce('未允許感測器，可用手指拖曳視角'); } catch { announce('可用手指拖曳視角'); } }
   clearField(); useTheme(LEVELS[index].theme); renderer.toneMappingExposure = state.mode === 'child' ? 1.35 : 1.08; document.body.dataset.mode = state.mode;
   Object.assign(state, { running: true, spraying: false, health: 100, score: keepScore ? state.score : 0, levelScore: 0, level: index, wave: 0, queue: [], waveTimer: 0, itemTimer: 5, boosts: emptyBoosts(), baseYaw: null, basePitch: null, groanTimer: 3, yaw: 0, pitch: 0 });
+  loadout=createLoadout();iceCooldown=0;renderWeapons();
   camera.rotation.set(0, 0, 0); ui.panel.classList.add('hidden'); ui.levelInfo.classList.add('visible'); updateHud(); startWave(); clock.start(); starting = false;
 }
 function showPanel(title, text, action, onAction) { ui.title.textContent = title; ui.text.textContent = text; ui.start.textContent = action; ui.start.onclick = onAction; ui.start.hidden = !state.mode; renderLevelGrid(); ui.panel.classList.remove('hidden'); ui.levelInfo.classList.remove('visible'); }
-function stopPlay() { state.running = false; state.spraying = false; setSpraying(false); ui.shell.classList.remove('shielded', 'time-stopped'); ui.powerUp.classList.remove('visible'); ui.meter.classList.remove('visible'); }
+function stopPlay() { state.running = false; state.spraying = false; loadout.scoped=false; renderWeapons(); setSpraying(false); ui.shell.classList.remove('shielded', 'time-stopped'); ui.powerUp.classList.remove('visible'); ui.meter.classList.remove('visible'); }
 function levelComplete() {
   stopPlay(); sfx.levelClear(); const next = state.level + 1;
   if (next < LEVELS.length && next + 1 > state.unlocked) { state.unlocked = next + 1; saveProgress(localStorage, state.unlocked); }
   if (next >= LEVELS.length) { showPanel('全部通關！🎉', `你打敗了大魔王，總共 ${state.score} 分！`, '再玩一次', () => startLevel(0)); return; }
-  showPanel('過關！', `第 ${state.level + 1} 關完成，這關得到 ${state.levelScore} 分。下一關：${LEVELS[next].name}`, '下一關 →', () => startLevel(next, true));
+  showPanel('過關！', `第 ${state.level + 1} 關完成，這關得到 ${state.levelScore} 分。下一關：${levelName(next)}`, '下一關 →', () => startLevel(next, true));
 }
-function gameOver() { stopPlay(); sfx.gameOver(); showPanel(state.mode === 'child' ? '做得很好！' : '防線失守', state.mode === 'child' ? `你已經守到第 ${state.level + 1} 關，選版本再挑戰一次！` : `第 ${state.level + 1} 關 ${LEVELS[state.level].name}，重新整備！`, '再試一次', () => startLevel(state.level)); }
+function gameOver() { stopPlay(); sfx.gameOver(); showPanel(state.mode === 'child' ? '做得很好！' : '防線失守', state.mode === 'child' ? `你已經守到第 ${state.level + 1} 關，選版本再挑戰一次！` : `第 ${state.level + 1} 關 ${levelName(state.level)}，重新整備！`, '再試一次', () => startLevel(state.level)); }
 function renderLevelGrid() {
   if (!state.mode) { ui.grid.replaceChildren(); return; }
-  ui.grid.replaceChildren(...LEVELS.map((lv, i) => { const b = document.createElement('button'), locked = i + 1 > state.unlocked; b.type = 'button'; b.className = 'level-button'; b.disabled = locked; b.innerHTML = `<b>${locked ? '🔒' : i + 1}</b><span>${lv.name}</span>`; b.classList.toggle('current', i === state.level); b.addEventListener('click', () => startLevel(i)); return b; }));
+  ui.grid.replaceChildren(...LEVELS.map((lv, i) => { const b = document.createElement('button'), locked = i + 1 > state.unlocked; b.type = 'button'; b.className = 'level-button'; b.disabled = locked; b.innerHTML = `<b>${locked ? '🔒' : i + 1}</b><span>${levelName(i)}</span>`; b.classList.toggle('current', i === state.level); b.addEventListener('click', () => startLevel(i)); return b; }));
 }
 
 // ── HUD 與訊息 ──
@@ -192,10 +235,12 @@ function handleOrientation(event) {
 function updateGroans(dt) { state.groanTimer -= dt; if (state.groanTimer > 0) return; state.groanTimer = 2.5 + Math.random() * 3; const alive = state.enemies.filter(e => e.userData.alive && e.userData.freeze < 100); if (alive.length) sfx.groan(alive[Math.floor(Math.random() * alive.length)].userData.distance); }
 function loop() {
   requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), .05), elapsed = clock.elapsedTime;
-  world?.update(performance.now() / 1000); setSpraying(state.running && state.spraying, state.boosts.water > 0);
+  world?.update(performance.now() / 1000); setSpraying(state.running && state.spraying && state.mode!=='adult', state.boosts.water > 0);
+  firearm.update(dt,loadout,state.mode==='adult',performance.now()/1000);
   if (state.running) {
     camera.rotation.y = stepAim(camera.rotation.y, state.yaw, dt, AIM_SMOOTHING, AIM_MAX_SPEED); camera.rotation.x = stepAim(camera.rotation.x, state.pitch, dt, AIM_SMOOTHING, AIM_MAX_SPEED); camera.updateMatrixWorld();
     tickBoosts(state.boosts, dt); updatePowerUpHud();
+    if(state.mode==='adult'){tickWeapon(loadout,dt);iceCooldown=Math.max(0,iceCooldown-dt);renderWeapons();}
     const enemy = targetEnemy(); if (state.spraying) sprayAt(enemy, dt); else { ui.crosshair.classList.toggle('locked', !!enemy); ui.meter.classList.remove('visible'); }
     const enemyDt = dt * enemyTimeScale(state.boosts); for (const e of [...state.enemies]) { updateEnemy(e, enemyDt); if (!state.running) break; }
     if (state.running) { updateItems(dt, elapsed); updateSpawning(dt); updateGroans(dt); watchPerformance(dt); }
@@ -221,10 +266,10 @@ document.addEventListener('selectionchange', () => { const sel = document.getSel
 function selectMode(mode) {
   state.mode = mode; const child = mode === 'child'; ui.modeBadge.textContent = child ? '🌈 小孩版' : '🌙 成人版';
   ui.modeButtons.forEach(button => button.classList.toggle('selected', button.dataset.mode === mode));
-  ui.text.textContent = child ? '可愛怪物速度較慢、傷害較低。選擇關卡開始冒險！' : '敵人更多、更快、傷害更高。選擇關卡接受挑戰！';
+  ui.text.textContent = child ? '可愛怪物速度較慢、傷害較低。選擇關卡開始冒險！' : '步槍連射／狙擊開鏡，轉動手機瞄準、按住射擊。換彈補滿彈匣，冰爆阻止敵人前進。';
   ui.start.hidden = false; ui.start.textContent = state.unlocked > 1 ? `繼續第 ${state.unlocked} 關` : '開始第 1 關'; ui.start.onclick = () => startLevel(state.unlocked - 1); renderLevelGrid();
 }
 ui.modeButtons.forEach(button => button.addEventListener('click', () => selectMode(button.dataset.mode)));
 state.level = state.unlocked - 1; useTheme(LEVELS[state.level].theme);
-showPanel('冰水特攻隊', '先選擇小孩版或成人版，再選關卡。兩種版本都能轉動手機瞄準、按住畫面噴水。', '', () => {});
+showPanel('冰水特攻隊', '轉動手機瞄準。小孩版使用花朵水槍，成人版使用步槍與狙擊槍。', '', () => {});
 loop();

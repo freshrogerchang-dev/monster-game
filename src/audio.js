@@ -41,6 +41,8 @@ export function setSpraying(on, strong = false) {
 }
 
 export const sfx = {
+  gunshot(sniper=false) { noise({dur:sniper?.32:.12,vol:.42,filter:'lowpass',freq:sniper?2100:3800,to:160}); tone({freq:sniper?100:160,to:40,type:'triangle',dur:.18,vol:.25}); noise({dur:.055,vol:.2,filter:'highpass',freq:6000}); },
+  reload() { [0,.35,1.2].forEach(start=>noise({start,dur:.08,vol:.16,filter:'highpass',freq:1800})); },
   freeze() { [1320, 1760, 2350].forEach((f, i) => tone({ freq: f, type: 'triangle', start: i * .06, dur: .35, vol: .14 })); noise({ dur: .4, vol: .08, filter: 'highpass', freq: 5000 }); },
   shatter() { noise({ dur: .35, vol: .45, filter: 'highpass', freq: 2500, to: 6000 }); noise({ dur: .15, vol: .3, filter: 'lowpass', freq: 600 }); for (let i = 0; i < 6; i++) tone({ freq: 2000 + Math.random() * 3000, type: 'triangle', start: .03 + i * .04, dur: .18, vol: .08 }); tone({ freq: 880, to: 1760, type: 'square', start: .05, dur: .15, vol: .05 }); },
   hurt() { tone({ freq: 220, to: 70, type: 'sawtooth', dur: .35, vol: .22 }); noise({ dur: .2, vol: .3, filter: 'lowpass', freq: 400 }); },

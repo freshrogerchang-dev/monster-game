@@ -5,6 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node tests/mechanics.test.mjs"
+    "test": "node tests/mechanics.test.mjs && node tests/weapons.test.mjs"
   }
 }

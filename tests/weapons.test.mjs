@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {createLoadout,fireWeapon,reloadWeapon,switchWeapon,tickWeapon,hitWithBullet} from '../src/weapons.js';
+const w=createLoadout();assert.equal(fireWeapon(w),true);assert.equal(w.ammo.rifle,29);assert.equal(fireWeapon(w),false);
+tickWeapon(w,.12);assert.equal(fireWeapon(w),true);assert.equal(reloadWeapon(w),true);assert.equal(fireWeapon(w),false);
+tickWeapon(w,1.7);assert.equal(w.ammo.rifle,30);assert.equal(reloadWeapon(w),false);
+switchWeapon(w);tickWeapon(w,.3);assert.equal(w.selected,'sniper');assert.equal(fireWeapon(w),true);assert.equal(w.ammo.sniper,4);
+reloadWeapon(w);switchWeapon(w);tickWeapon(w,3);assert.equal(w.ammo.sniper,4,'switching cancels reload without free ammunition');
+switchWeapon(w);w.ammo.sniper=0;tickWeapon(w,2);assert.equal(fireWeapon(w),false);assert.ok(w.reloadLeft>0);tickWeapon(w,2.5);assert.equal(w.ammo.sniper,5);
+const normal={alive:true,hp:100,freeze:0};assert.equal(hitWithBullet(normal,'sniper'),true);
+const tank={alive:true,hp:260,freeze:100};assert.equal(hitWithBullet(tank,'rifle'),false);assert.equal(tank.hp,215.2);
+console.log('Weapon timing, ammo, reload cancellation and damage tests passed');

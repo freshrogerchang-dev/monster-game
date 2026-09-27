@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import { surface } from './surface.js';
 
 // 可愛 Q 版殭屍：大頭、大眼、腮紅，三種造型共用幾何體以節省效能
 export const ZOMBIE_TYPES = {
@@ -131,16 +132,26 @@ const ADULT_PALETTE = {
 
 function createRealisticZombieModel(type) {
   const cfg = ZOMBIE_TYPES[type], palette = ADULT_PALETTE[type];
-  const skin = new THREE.MeshStandardMaterial({ color: palette.skin, roughness: .96, metalness: 0 });
-  const cloth = new THREE.MeshStandardMaterial({ color: palette.cloth, roughness: 1 });
-  const pants = new THREE.MeshStandardMaterial({ color: palette.pants, roughness: .94 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc8c1a9, map:surface('skin'),bumpMap:surface('skin'),bumpScale:.017, roughness: .86, metalness: 0 });
+  const cloth = new THREE.MeshStandardMaterial({ color: type==='normal'?0x819092:palette.cloth, map:surface('fabric'),bumpMap:surface('fabric'),bumpScale:.025,roughness: 1 });
+  const pants = new THREE.MeshStandardMaterial({ color: 0x4c514e, map:surface('fabric'),bumpMap:surface('fabric'),bumpScale:.015,roughness: .94 });
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   body.rotation.x = type === 'fast' ? .18 : .10;
 
-  const torso = mesh(realisticGeo.torso, cloth, 0, 1.28, 0, body); torso.castShadow = true;
+  const torso = mesh(realisticGeo.torso, cloth, 0, 1.28, 0, body); torso.castShadow = true;torso.scale.z=.72;
   torso.scale.set(type === 'tank' || type === 'boss' ? 1.35 : type === 'fast' ? .82 : 1, 1, type === 'tank' ? 1.25 : 1);
   mesh(realisticGeo.shoulder, cloth, 0, 1.55, 0, body).scale.x = type === 'tank' || type === 'boss' ? 1.25 : 1;
   const wound = mesh(realisticGeo.wound, adultShared.wound, type === 'tank' ? -.08 : .11, 1.34, .267, body); wound.rotation.z = -.35;
+  const owned=[];
+  function detail(geometry,material,x,y,z,parent=body){owned.push(geometry);return mesh(geometry,material,x,y,z,parent);}
+  for(const side of [-1,1]) {
+    const lapel=detail(new THREE.BoxGeometry(.14,.32,.026),cloth,side*.115,1.52,.20);lapel.rotation.z=side*-.23;
+    detail(new THREE.BoxGeometry(.135,.14,.03),cloth,side*.14,1.27,.205);
+    detail(new THREE.SphereGeometry(.09,12,8),skin,side*.23,1.44,.07).scale.set(.85,1.5,.8);
+  }
+  for(let i=0;i<5;i++)detail(new THREE.SphereGeometry(.015,8,6),adultShared.boot,0,1.06+i*.11,.214);
+  detail(new THREE.BoxGeometry(.44,.055,.32),adultShared.boot,0,.98,0);
+  detail(new THREE.BoxGeometry(.07,.065,.022),adultShared.teeth,0,.98,.17);
 
   const limbs = [], arms = [], legs = [];
   for (const side of [-1, 1]) {
@@ -148,6 +159,9 @@ function createRealisticZombieModel(type) {
     mesh(realisticGeo.arm, skin, 0, -.25, 0, arm);
     const elbow = new THREE.Group(); elbow.position.set(0, -.48, 0); elbow.rotation.x = -.22; arm.add(elbow);
     mesh(realisticGeo.forearm, skin, 0, -.22, 0, elbow); mesh(realisticGeo.hand, skin, 0, -.47, -.015, elbow);
+    detail(new THREE.CapsuleGeometry(.084,.24,4,10),cloth,0,-.16,0,arm);
+    for(let finger=0;finger<4;finger++){const f=detail(new THREE.CapsuleGeometry(.016,.095,3,6),skin,-.047+finger*.031,-.59,-.025,elbow);f.rotation.x=-.18-finger*.08;}
+    detail(new THREE.CapsuleGeometry(.02,.065,3,7),skin,side*.08,-.50,.01,elbow).rotation.z=side*-.5;
     arm.rotation.z = side * (type === 'tank' ? -.1 : -.03); arms.push(arm);
   }
   for (const side of [-1, 1]) {
@@ -161,21 +175,32 @@ function createRealisticZombieModel(type) {
 
   const head = new THREE.Group(); head.position.set(type === 'fast' ? .04 : 0, 1.91, .035); head.rotation.z = type === 'normal' ? -.12 : type === 'boss' ? .08 : 0; body.add(head);
   const skull = mesh(realisticGeo.head, skin, 0, 0, 0, head); skull.scale.set(type === 'tank' ? 1.08 : .96, 1.16, .92); skull.castShadow = true;
+  detail(new THREE.ConeGeometry(.045,.12,10),skin,0,-.035,.235,head).rotation.x=-.45;
+  for(const side of [-1,1]){
+    detail(new THREE.SphereGeometry(.052,12,8),skin,side*.22,-.035,0,head).scale.set(.45,1.4,.75);
+    detail(new THREE.CapsuleGeometry(.032,.075,4,8),skin,side*.09,.098,.21,head).rotation.z=side*.95;
+    detail(new THREE.SphereGeometry(.065,12,8),skin,side*.135,-.08,.14,head).scale.set(.8,.6,.9);
+  }
+  // Ragged hair clumps, with different silhouettes for each infected type.
+  if(type!=='tank')for(let i=0;i<(type==='fast'?16:9);i++){
+    const a=i*.7, hair=detail(new THREE.CapsuleGeometry(.033,type==='fast'?.32:.13,3,7),adultShared.boot,Math.sin(a)*.18,.13,Math.cos(a)*.13-.035,head);hair.rotation.z=Math.sin(a)*.4;hair.rotation.x=.2;
+  }
   const jaw = mesh(realisticGeo.jaw, skin, .025, -.20, .035, head); jaw.rotation.x = type === 'fast' ? .28 : .12;
   for (const side of [-1, 1]) {
     mesh(realisticGeo.socket, adultShared.socket, side * .09, .035, .195, head).scale.set(1.25, .72, .45);
     const eye = mesh(realisticGeo.eye, adultShared.eye, side * .09, .035, .232, head); eye.scale.set(type === 'boss' ? 1.25 : .8, .7, .45);
   }
-  const mouth = mesh(new THREE.BoxGeometry(.18, .045, .018), adultShared.mouth, .025, -.205, .158, head); mouth.rotation.x = -.14;
+  const mouth = detail(new THREE.SphereGeometry(.075,14,10), adultShared.mouth, .015, -.16, .192, head); mouth.scale.set(1.1,.85,.3);
   for (const x of [-.055, 0, .055]) mesh(realisticGeo.tooth, adultShared.teeth, x + .025, -.19, .174, head).rotation.z = x * 2;
 
   if (type === 'boss') {
-    for (const side of [-1, 1]) { const scar = mesh(new THREE.BoxGeometry(.018, .22, .014), adultShared.wound, side * .11, .02, .218, head); scar.rotation.z = side * .25; }
+    for (const side of [-1, 1]) { const scar = detail(new THREE.BoxGeometry(.018, .22, .014), adultShared.wound, side * .11, .02, .218, head); scar.rotation.z = side * .25; }
   }
-  if (type === 'tank') mesh(new THREE.BoxGeometry(.76, .09, .31), adultShared.boot, 0, 1.63, -.01, body).rotation.z = .04;
+  if (type === 'tank' || type==='boss') {detail(new THREE.BoxGeometry(.76, .09, .31), adultShared.boot, 0, 1.63, -.01, body).rotation.z = .04;for(const s of [-1,1]) detail(new THREE.BoxGeometry(.15,.52,.07),adultShared.boot,s*.2,1.32,.22);}
 
   const hitbox = mesh(realisticGeo.hitbox, adultShared.hitbox, 0, 1.08, 0, root); hitbox.userData.enemyRoot = root;
   root.scale.setScalar(cfg.scale);
+  root.position.y=.2;root.userData.ownedGeometries=owned;root.userData.adult=true;
   return { root, hitbox, body, head, limbs, parts: [skin, cloth, pants], baseColors: [skin.color.clone(), cloth.color.clone(), pants.color.clone()] };
 }
 

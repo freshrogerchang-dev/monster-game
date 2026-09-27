@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import { addRuins } from './ruins.js';
 
 // 六個關卡場景。buildScene(scene, theme, lights) 回傳 { update(elapsed), dispose() }
 // 效能：不會動的物件在建好後依材質合併成少數幾個網格（大幅減少繪製次數），燈泡用 InstancedMesh
@@ -326,7 +327,7 @@ function birds(k, count, color, height, bat = false) {
 }
 
 const ADULT_SCENES = {
-  carnival: { sky: ['#06080b', '#182027', '#29231f'], fog: 0x14191c, accent: 0x8c3b2d, ground: '#171a1b', label: 'ABANDONED MIDWAY' },
+  carnival: { sky: ['#577e8c', '#a2b6b9', '#e2d8b9'], fog: 0x9baaa6, accent: 0x8c6545, ground: '#66655b', label: 'ABANDONED MIDWAY' },
   candy: { sky: ['#080b0d', '#1b2223', '#32302b'], fog: 0x1a2020, accent: 0x80613c, ground: '#1a1d1c', label: 'PROCESSING PLANT' },
   snow: { sky: ['#111821', '#34414c', '#68717a'], fog: 0x66717a, accent: 0x46545d, ground: '#7b858b', label: 'QUARANTINE ZONE' },
   beach: { sky: ['#080e12', '#26333a', '#5c5148'], fog: 0x354047, accent: 0x6b4f39, ground: '#292b29', label: 'EVACUATION COAST' },
@@ -346,12 +347,18 @@ function grungeTexture(base, repeat = [10, 18], cracks = true) {
 
 function adultEnvironment(k, theme) {
   const cfg = ADULT_SCENES[theme];
+  addRuins(k,theme,grungeTexture);
   k.sky([[cfg.sky[0], 0], [cfg.sky[1], .52], [cfg.sky[2], 1]], { stars: theme === 'moon' ? 850 : 0, starSize: .18 });
+  if(theme==='carnival'){
+    const cloud=canvasTexture(128,(g,s)=>{const a=g.createRadialGradient(64,64,3,64,64,63);a.addColorStop(0,'rgba(243,238,218,.72)');a.addColorStop(.5,'rgba(232,234,222,.34)');a.addColorStop(1,'rgba(232,234,222,0)');g.fillStyle=a;g.fillRect(0,0,s,s);});
+    const cm=new THREE.SpriteMaterial({map:cloud,transparent:true,depthWrite:false,opacity:.6,fog:false});
+    for(let i=0;i<20;i++){const c=new THREE.Sprite(cm);c.position.set(rand(-65,65),rand(17,36),rand(-85,-55));c.scale.set(rand(13,25),rand(4,8),1);k.root.add(c);}
+  }
   const groundTex = grungeTexture(cfg.ground, [12, 26], theme !== 'snow');
-  const pathTex = grungeTexture(theme === 'snow' ? '#69737a' : '#202325', [3, 28]);
+  const pathTex = grungeTexture(theme === 'snow' ? '#69737a' : '#696b62', [3, 28]);
   k.ground(groundTex, pathTex, theme === 'moon' ? 0x3f4850 : 0x343738);
 
-  const concrete = std(0x3d4140, { map: grungeTexture('#525755', [3, 3]), roughness: 1 });
+  const concrete = std(0xa6a397, { map: grungeTexture('#979c92', [3, 3]), roughness: 1 });
   const darkConcrete = std(0x232728, { roughness: .98 });
   const rust = std(0x583a2b, { map: grungeTexture('#654333', [2, 3]), metalness: .34, roughness: .88 });
   const metal = std(0x4a5051, { metalness: .58, roughness: .72 });
@@ -360,11 +367,13 @@ function adultEnvironment(k, theme) {
 
   // Derelict structures create a narrow first-person street with realistic scale and depth.
   for (const side of [-1, 1]) for (let i = 0; i < 7; i++) {
-    const z = -7 - i * 12 + rand(-1.4, 1.4), width = rand(7, 11), height = rand(6, 13), depth = rand(5, 8);
-    const building = k.group(side * rand(11, 14), 0, z); building.rotation.y = side * rand(-.05, .05);
+    const z = -13 - i * 12 + rand(-1.4, 1.4), width = rand(7, 11), height = rand(4, 8), depth = rand(4, 6);
+    const building = k.group(side * rand(14, 17), 0, z); building.rotation.y = side * rand(-.05, .05);
     const wall = k.mesh(new THREE.BoxGeometry(depth, height, width), i % 3 ? concrete : darkConcrete, 0, height / 2, 0, building); wall.castShadow = wall.receiveShadow = true;
     for (let floor = 1.7; floor < height - .8; floor += 2.25) for (const wz of [-width * .27, width * .27]) {
-      const win = k.mesh(new THREE.PlaneGeometry(1.15, 1.25), glass, -side * (depth / 2 + .006), floor, wz, building); win.rotation.y = side * Math.PI / 2;
+      const win = k.mesh(new THREE.PlaneGeometry(1.15, 1.25), glass, -side * (depth / 2 + .006), floor, wz, building); win.rotation.y = -side * Math.PI / 2;
+      for(const offset of [-.64,.64])k.mesh(new THREE.BoxGeometry(.1,.08,1.4),rust,-side*(depth/2+.04),floor+offset,wz,building);
+      for(const offset of [-.60,.60])k.mesh(new THREE.BoxGeometry(.1,1.35,.08),rust,-side*(depth/2+.04),floor,wz+offset,building);
       if ((i + Math.round(floor) + (wz > 0 ? 1 : 0)) % 4 === 0) win.material = darkConcrete;
     }
     if (i % 2 === 0) { const pipe = k.mesh(new THREE.CylinderGeometry(.11, .14, height * .75, 8), rust, -side * (depth / 2 + .18), height * .42, width * .35, building); pipe.rotation.z = .015; }
@@ -413,8 +422,8 @@ export const THEME_LIGHTING = {
   moon: { fog: [0x05060f, .006], hemi: [0xb0c0ff, 0x303040, 1.8], sun: [0xffffff, 3.4] }
 };
 const ADULT_LIGHTING = {
-  carnival: { fog: [0x1a2024, .024], hemi: [0x718493, 0x181b1d, 1.05], sun: [0xc5b59e, 1.65] },
-  candy: { fog: [0x202727, .023], hemi: [0x78827d, 0x1b1d1b, 1.08], sun: [0xc4b89e, 1.55] },
+  carnival: { fog: [0xa1b0aa, .011], hemi: [0xd5e8ed, 0x948970, 2.9], sun: [0xffe3ad, 3.5] },
+  candy: { fog: [0x777c70, .018], hemi: [0xa1b9b2, 0x44483c, 1.8], sun: [0xebd3a3, 2.8] },
   snow: { fog: [0x66717a, .032], hemi: [0x9caab4, 0x343a3e, 1.05], sun: [0xd4d9d8, 1.35] },
   beach: { fog: [0x354047, .024], hemi: [0x78868c, 0x202628, .9], sun: [0xb39a7e, 1.45] },
   graveyard: { fog: [0x161d1e, .032], hemi: [0x5d7070, 0x101414, .88], sun: [0x9ba7a2, 1.22] },
