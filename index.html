@@ -12,6 +12,7 @@
     <canvas id="game" aria-label="3D 第一人稱水槍射擊遊戲"></canvas>
     <header class="hud" aria-label="遊戲狀態">
       <div class="health-wrap"><span>生命</span><div class="health-track"><i id="healthBar"></i></div><strong id="healthText">100</strong></div>
+      <div id="modeBadge" class="mode-badge">選擇版本</div>
       <div class="score"><span>分數</span><strong id="score">0</strong></div>
     </header>
     <div class="crosshair" aria-hidden="true"><i></i><i></i></div>
@@ -21,8 +22,11 @@
     <section id="startPanel" class="panel">
       <p class="eyebrow">3D WATER BLASTER</p>
       <h1>冰水特攻隊</h1>
-      <p>轉動手機改變視角，按住畫面噴水。別讓殭屍碰到你！</p>
-      <button id="startButton">啟動水槍</button>
+      <p id="panelText">選擇適合你的版本。兩種版本都能轉動手機瞄準、按住畫面噴水。</p>
+      <div class="mode-options">
+        <button class="mode-button child" data-mode="child"><b>🌈 小孩版</b><span>可愛怪物・慢速・低傷害</span></button>
+        <button class="mode-button adult" data-mode="adult"><b>🌙 成人版</b><span>陰暗氣氛・高速・高難度</span></button>
+      </div>
       <small>iPhone 會詢問動作與方向權限</small>
     </section>
   </main>

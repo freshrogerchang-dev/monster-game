@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { advanceEnemy, applyWater, clamp, resolveContact } from '../src/mechanics.js';
+import { advanceEnemy, applyModeStats, applyWater, clamp, MODE_RULES, resolveContact } from '../src/mechanics.js';
 
 assert.equal(clamp(140, 0, 100), 100);
 const target = { alive: true, freeze: 0, freezeRate: 50 };
@@ -13,4 +13,12 @@ const attacker = { alive: true, distance: 1.2, damage: 25 };
 assert.deepEqual(resolveContact(100, attacker), { health: 75, hit: true });
 assert.equal(attacker.alive, false);
 assert.deepEqual(resolveContact(75, attacker), { health: 75, hit: false });
+const baseStats = { speed: 2, damage: 20, freezeRate: 40 };
+const childStats = applyModeStats(baseStats, 'child');
+const adultStats = applyModeStats(baseStats, 'adult');
+assert.ok(childStats.speed < adultStats.speed);
+assert.ok(childStats.damage < adultStats.damage);
+assert.ok(childStats.freezeRate > adultStats.freezeRate);
+assert.equal(MODE_RULES.child.maxEnemies, 5);
+assert.equal(MODE_RULES.adult.maxEnemies, 10);
 console.log('3D mechanics tests passed');

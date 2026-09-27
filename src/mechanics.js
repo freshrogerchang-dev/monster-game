@@ -1,5 +1,20 @@
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+export const MODE_RULES = Object.freeze({
+  child: { speedMultiplier: 0.62, damageMultiplier: 0.5, freezeMultiplier: 1.3, baseEnemies: 1, maxEnemies: 5 },
+  adult: { speedMultiplier: 1.22, damageMultiplier: 1.3, freezeMultiplier: 0.85, baseEnemies: 3, maxEnemies: 10 }
+});
+
+export function applyModeStats(stats, mode) {
+  const rules = MODE_RULES[mode] || MODE_RULES.child;
+  return {
+    ...stats,
+    speed: stats.speed * rules.speedMultiplier,
+    damage: Math.round(stats.damage * rules.damageMultiplier),
+    freezeRate: stats.freezeRate * rules.freezeMultiplier
+  };
+}
+
 export function applyWater(enemy, seconds) {
   if (!enemy.alive) return { shattered: false, justFrozen: false };
   const wasFrozen = enemy.freeze >= 100;
