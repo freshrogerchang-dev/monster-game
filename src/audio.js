@@ -40,7 +40,26 @@ export function setSpraying(on, strong = false) {
   if (!on && spray) { const s = spray; spray = null; s.g.gain.setTargetAtTime(0, ctx.currentTime, .05); s.src.stop(ctx.currentTime + .3); s.lfo.stop(ctx.currentTime + .3); }
 }
 
+// 火焰槍：低沉的轟轟聲＋劈啪聲，按住時持續
+let flame = null;
+export function setFlaming(on) {
+  if (!ctx) return;
+  if (on && !flame) {
+    const t = ctx.currentTime, roar = ctx.createBufferSource(), low = ctx.createBiquadFilter(), roarGain = ctx.createGain(), crackle = ctx.createBufferSource(), high = ctx.createBiquadFilter(), crackleGain = ctx.createGain(), flutter = ctx.createOscillator(), flutterGain = ctx.createGain();
+    roar.buffer = noiseBuffer; roar.loop = true; low.type = 'lowpass'; low.frequency.value = 520; low.Q.value = 1.4;
+    roarGain.gain.setValueAtTime(0, t); roarGain.gain.linearRampToValueAtTime(.42, t + .12);
+    flutter.frequency.value = 13; flutterGain.gain.value = 140; flutter.connect(flutterGain).connect(low.frequency);
+    crackle.buffer = noiseBuffer; crackle.loop = true; crackle.playbackRate.value = .37; high.type = 'highpass'; high.frequency.value = 2600; crackleGain.gain.value = .07;
+    roar.connect(low).connect(roarGain).connect(master); crackle.connect(high).connect(crackleGain).connect(master);
+    roar.start(t, Math.random()); crackle.start(t, Math.random()); flutter.start(t); flame = { roar, crackle, flutter, roarGain, crackleGain };
+    noise({ dur: .35, vol: .3, filter: 'bandpass', freq: 300, to: 1600, q: .7 });
+  }
+  if (!on && flame) { const f = flame, t = ctx.currentTime; flame = null; f.roarGain.gain.setTargetAtTime(0, t, .07); f.crackleGain.gain.setTargetAtTime(0, t, .05); for (const n of [f.roar, f.crackle, f.flutter]) n.stop(t + .4); }
+}
+
 export const sfx = {
+  burnDeath() { noise({ dur: .7, vol: .35, filter: 'lowpass', freq: 900, to: 200 }); noise({ start: .05, dur: .5, vol: .12, filter: 'highpass', freq: 3500 }); tone({ freq: 160, to: 60, type: 'sawtooth', dur: .6, vol: .1 }); },
+  refuel() { noise({ dur: .25, vol: .15, filter: 'bandpass', freq: 900, q: 3 }); tone({ freq: 300, to: 520, type: 'sine', start: .5, dur: .6, vol: .06 }); noise({ start: 1.6, dur: .12, vol: .18, filter: 'highpass', freq: 1500 }); },
   gunshot(sniper=false) { noise({dur:sniper?.32:.12,vol:.42,filter:'lowpass',freq:sniper?2100:3800,to:160}); tone({freq:sniper?100:160,to:40,type:'triangle',dur:.18,vol:.25}); noise({dur:.055,vol:.2,filter:'highpass',freq:6000}); },
   reload() { [0,.35,1.2].forEach(start=>noise({start,dur:.08,vol:.16,filter:'highpass',freq:1800})); },
   freeze() { [1320, 1760, 2350].forEach((f, i) => tone({ freq: f, type: 'triangle', start: i * .06, dur: .35, vol: .14 })); noise({ dur: .4, vol: .08, filter: 'highpass', freq: 5000 }); },

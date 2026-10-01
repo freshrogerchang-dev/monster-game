@@ -78,8 +78,22 @@ button { font: inherit; }
 .scope-ring i,.scope-ring b { position:absolute;left:50%;top:50%;width:100%;height:1px;background:#171d1a;transform:translate(-50%,-50%); }.scope-ring b{transform:translate(-50%,-50%) rotate(90deg);}.scope-ring span{position:absolute;top:72%;width:100%;text-align:center;font:10px monospace;color:#aad9c8;}
 .scoped .crosshair{border:0;width:6px;height:6px;background:#e93535;}.scoped .crosshair i,.scoped .crosshair::after{display:none;}
 body[data-mode=adult] .crosshair:not(.locked){border-color:#e1e5db;border-width:1px;width:28px;height:28px;}body[data-mode=adult] .crosshair::after{inset:11px;}body[data-mode=adult] .crosshair i{width:42px;height:1px;}
-body[data-mode=adult] .mode-badge{display:none;}body[data-mode=adult] .message{font-size:clamp(18px,3vw,28px);text-shadow:0 2px 6px #000;}
+body[data-mode] .mode-badge{display:none;}body[data-mode=adult] .message{font-size:clamp(18px,3vw,28px);text-shadow:0 2px 6px #000;}
 @media(max-width:600px){.combat-buttons{gap:5px;right:10px;}.combat-buttons button{width:49px;height:49px;font-size:10px;}#fireButton{width:70px;height:70px;}.ammo-readout{top:130px;padding:7px 10px;}.ammo-readout strong{font-size:23px;}}
 @media(max-height:520px){.ammo-readout{top:85px;}.combat-buttons{bottom:12px;}}
 body[data-mode=adult] .scoped .crosshair{width:4px;height:4px;border:0;}body[data-mode=adult] .scoped .crosshair::after{display:none;}
 body[data-mode=adult] .mute{position:fixed;left:14px;bottom:max(16px,env(safe-area-inset-bottom));margin:0;}
+
+/* 火焰槍 */
+#fuelBar { display:block;height:5px;margin-top:5px;background:#2a1d16;border-radius:3px;overflow:hidden; }#fuelBar[hidden]{display:none;}
+#fuelBar b { display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff4d1a,#ffb03a);box-shadow:0 0 8px #ff7a2a; }
+body[data-mode=adult] .flamer .crosshair { width:70px;height:70px;border:2px dashed #ffb26b;border-radius:50%;background:none; }
+body[data-mode=adult] .flamer .crosshair::after { inset:31px;background:#ffb26b; }body[data-mode=adult] .flamer .crosshair i { display:none; }
+body[data-mode=adult] .flamer .crosshair.locked { border-color:#ff5a2a;border-style:solid; }
+.flamer #fireButton { background:radial-gradient(circle at 50% 40%,#ff9a3acc,#7a1f0ecc);border-color:#ffc08a; }
+/* 成人版畫面：暗角＋細微底片顆粒 */
+.film-fx { position:absolute;inset:0;z-index:2;pointer-events:none;display:none; }
+body[data-mode=adult] .film-fx { display:block;background:radial-gradient(ellipse at 50% 46%,transparent 52%,rgba(8,10,10,.38) 82%,rgba(0,0,0,.62) 100%); }
+body[data-mode=adult] .film-fx::after { content:"";position:absolute;inset:-50%;opacity:.07;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");animation:grain .9s steps(5) infinite; }
+@keyframes grain { 0%{transform:translate(0,0)} 20%{transform:translate(-6%,4%)} 40%{transform:translate(5%,-7%)} 60%{transform:translate(-4%,-3%)} 80%{transform:translate(7%,5%)} 100%{transform:translate(0,0)} }
+@media (prefers-reduced-motion: reduce) { body[data-mode=adult] .film-fx::after { animation:none; } }
